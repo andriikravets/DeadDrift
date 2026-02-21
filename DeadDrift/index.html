@@ -265,7 +265,7 @@ const CFG = {
   BASE_SPAWN_RATE: 0.5,
   SPAWN_GROWTH: 0.02,
   MAX_SPAWN_RATE: 5,
-  HIT_COOLDOWN: 500,
+  HIT_COOLDOWN: 600,
 };
 
 CFG.CHUNK_PX = CFG.CHUNK * CFG.TILE; // 768
@@ -274,7 +274,7 @@ const TERRAIN = {
   GRASS:    { color: '#4a7c59', rgb: [74, 124, 89],  speed: 1.0 },
   DIRT:     { color: '#8b7355', rgb: [139, 115, 85], speed: 0.95 },
   GRAVEL:   { color: '#7a7a7a', rgb: [122, 122, 122], speed: 0.85 },
-  MUD:      { color: '#5c4033', rgb: [92, 64, 51],   speed: 0.65 },
+  MUD:      { color: '#5c4033', rgb: [92, 64, 51],   speed: 0.70 },
   DRY_EARTH:{ color: '#c2a878', rgb: [194, 168, 120], speed: 0.9 },
 };
 
@@ -298,7 +298,7 @@ const CAR_COLORS = [
 
 const ENEMY_TYPES = {
   shambler: { speed: 60,  hp: 40,  damage: 10, points: 10, radius: 10, color: '#8b0000' },
-  runner:   { speed: 150, hp: 20,  damage: 5,  points: 25, radius: 8,  color: '#cc5500' },
+  runner:   { speed: 110, hp: 20,  damage: 5,  points: 25, radius: 8,  color: '#cc5500' },
   brute:    { speed: 40,  hp: 100, damage: 25, points: 50, radius: 16, color: '#4a0040' },
 };
 
@@ -1137,7 +1137,55 @@ class Renderer {
     });
   }
 
-  render(camera, chunkManager, player, enemyPool, bulletPool) {
+  drawDebug(game) {
+    const ctx = this.ctx;
+    const p = game.player;
+    const cm = game.chunkManager;
+
+    // count alive enemies and bullets
+    let enemyAlive = 0;
+    game.enemyPool.forEach(() => enemyAlive++);
+    let bulletAlive = 0;
+    game.bulletPool.forEach(() => bulletAlive++);
+
+    // FPS tracking
+    const now = performance.now();
+    if (!this._fpsTimes) this._fpsTimes = [];
+    this._fpsTimes.push(now);
+    while (this._fpsTimes.length > 0 && this._fpsTimes[0] < now - 1000) this._fpsTimes.shift();
+    const fps = this._fpsTimes.length;
+
+    const lines = [
+      `FPS: ${fps}`,
+      `Pos: ${Math.round(p.x)}, ${Math.round(p.y)}`,
+      `Chunk: ${Math.floor(p.x / CFG.CHUNK_PX)}, ${Math.floor(p.y / CFG.CHUNK_PX)}`,
+      `Chunks: ${cm.active.size} act / ${cm.hot.size} hot / ${cm.cold.size} cold`,
+      `Enemies: ${enemyAlive} / ${CFG.ENEMY_POOL_SIZE}`,
+      `Bullets: ${bulletAlive} / ${CFG.BULLET_POOL_SIZE}`,
+      `Speed: ${Math.round(p.speed)}`,
+    ];
+
+    const x = this.canvas.width - 10;
+    const y = 10;
+    const lineH = 16;
+    const pad = 6;
+
+    // background
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    const maxW = 240;
+    ctx.fillRect(x - maxW - pad, y - pad, maxW + pad * 2, lines.length * lineH + pad * 2);
+
+    // text
+    ctx.font = '12px monospace';
+    ctx.fillStyle = '#0f0';
+    ctx.textAlign = 'right';
+    for (let i = 0; i < lines.length; i++) {
+      ctx.fillText(lines[i], x, y + 12 + i * lineH);
+    }
+    ctx.textAlign = 'left';
+  }
+
+  render(camera, chunkManager, player, enemyPool, bulletPool, debugGame) {
     this.clear();
     camera.applyTransform(this.ctx, this.canvas);
     this.drawChunks(camera, chunkManager);
@@ -1145,6 +1193,7 @@ class Renderer {
     this.drawBullets(bulletPool);
     this.drawPlayer(player);
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (debugGame) this.drawDebug(debugGame);
   }
 }
 
@@ -1205,6 +1254,10 @@ class Game {
     this.accumulator = 0;
     this.lastTime = 0;
     this.running = false;
+    this.debugOverlay = false;
+    window.addEventListener('keydown', e => {
+      if (e.code === 'Backquote') this.debugOverlay = !this.debugOverlay;
+    });
   }
 
   showScreen(phase) {
@@ -1270,7 +1323,7 @@ class Game {
     // render
     this.camera.follow(this.player.x, this.player.y, frameDt);
     this.chunkManager.update(this.camera.x, this.camera.y, this.canvas.width, this.canvas.height);
-    this.renderer.render(this.camera, this.chunkManager, this.player, this.enemyPool, this.bulletPool);
+    this.renderer.render(this.camera, this.chunkManager, this.player, this.enemyPool, this.bulletPool, this.debugOverlay ? this : null);
     this.hud.update(this.player, this.elapsedMs);
 
     requestAnimationFrame(t => this.loop(t));
