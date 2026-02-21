@@ -240,6 +240,34 @@
     transition: width 0.15s;
   }
 
+  #hud-powerups {
+    display: flex;
+    gap: 6px;
+    margin-left: 8px;
+  }
+
+  .powerup-pip {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.65rem;
+    color: var(--text);
+  }
+
+  .powerup-pip-bar {
+    width: 40px;
+    height: 6px;
+    background: #333;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .powerup-pip-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.1s;
+  }
+
   /* ---- Game Over ---- */
   #game-over {
     position: fixed;
@@ -366,6 +394,7 @@
   <div class="hud-item" id="hud-score">Score: 0</div>
   <div class="hud-item" id="hud-kills">Kills: 0</div>
   <div class="hud-item" id="hud-time">0:00</div>
+  <div id="hud-powerups"></div>
 </div>
 
 <div id="pause-screen" class="hidden">
@@ -399,6 +428,18 @@ const CFG = {
   BULLET_SPEED: 600,
   BULLET_MAX_AGE: 800,
   BULLET_DAMAGE: 20,
+  ROCKET_SPEED: 450,
+  ROCKET_DAMAGE: 80,
+  ROCKET_SPLASH_RADIUS: 120,
+  ROCKET_SPLASH_DAMAGE: 40,
+  ROCKET_MAX_AGE: 1400,
+  DROP_POOL_SIZE: 50,
+  DROP_MAX_AGE: 8000,
+  DROP_BLINK_AGE: 6000,
+  DROP_PICKUP_RADIUS: 20,
+  DROP_CHANCE: 0.25,
+  MAGNET_RADIUS: 150,
+  MAGNET_DAMAGE: 40,
   PLAYER_RADIUS: 16,
   SPAWN_MARGIN: 150,
   BASE_SPAWN_RATE: 0.5,
@@ -614,20 +655,23 @@ class BulletPool {
   constructor() {
     this.pool = Array.from({ length: CFG.BULLET_POOL_SIZE }, () => ({
       alive: false, x: 0, y: 0, dx: 0, dy: 0, angle: 0, age: 0,
-      damage: CFG.BULLET_DAMAGE,
+      damage: CFG.BULLET_DAMAGE, isRocket: false,
     }));
   }
 
-  fire(x, y, angle) {
+  fire(x, y, angle, isRocket = false) {
     for (const b of this.pool) {
       if (!b.alive) {
+        const speed = isRocket ? CFG.ROCKET_SPEED : CFG.BULLET_SPEED;
         b.alive = true;
         b.x = x;
         b.y = y;
         b.angle = angle;
-        b.dx = Math.cos(angle) * CFG.BULLET_SPEED;
-        b.dy = Math.sin(angle) * CFG.BULLET_SPEED;
+        b.dx = Math.cos(angle) * speed;
+        b.dy = Math.sin(angle) * speed;
         b.age = 0;
+        b.damage = isRocket ? CFG.ROCKET_DAMAGE : CFG.BULLET_DAMAGE;
+        b.isRocket = isRocket;
         return b;
       }
     }
@@ -641,7 +685,8 @@ class BulletPool {
       b.x += b.dx * dtSec;
       b.y += b.dy * dtSec;
       b.age += dt;
-      if (b.age > CFG.BULLET_MAX_AGE) b.alive = false;
+      const maxAge = b.isRocket ? CFG.ROCKET_MAX_AGE : CFG.BULLET_MAX_AGE;
+      if (b.age > maxAge) b.alive = false;
     }
   }
 
@@ -657,12 +702,84 @@ class BulletPool {
 }
 
 // ============================================================
-// 3d. ENEMY MANAGER
+// 3d. DROP TYPES + DROP POOL
+// ============================================================
+const DROP_TYPES = {
+  spread:  { category: 'weapon', color: '#ff8c00', duration: 12000, weight: 13.3 },
+  rapid:   { category: 'weapon', color: '#ffe600', duration: 12000, weight: 13.3 },
+  rocket:  { category: 'weapon', color: '#ff3333', duration: 12000, weight: 13.4 },
+  hp:      { category: 'hp',    color: '#22c55e', duration: 0,     weight: 30 },
+  speed:   { category: 'bonus', color: '#00f0ff', duration: 10000, weight: 7.5 },
+  shield:  { category: 'bonus', color: '#ffffff', duration: 8000,  weight: 7.5 },
+  score2x: { category: 'bonus', color: '#ffd700', duration: 15000, weight: 7.5 },
+  magnet:  { category: 'bonus', color: '#c040ff', duration: 0,     weight: 7.5 },
+};
+
+const DROP_WEIGHT_TOTAL = Object.values(DROP_TYPES).reduce((s, d) => s + d.weight, 0);
+
+function rollDropType() {
+  let r = Math.random() * DROP_WEIGHT_TOTAL;
+  for (const [type, cfg] of Object.entries(DROP_TYPES)) {
+    r -= cfg.weight;
+    if (r <= 0) return type;
+  }
+  return 'hp';
+}
+
+class DropPool {
+  constructor() {
+    this.pool = Array.from({ length: CFG.DROP_POOL_SIZE }, () => ({
+      alive: false, type: '', x: 0, y: 0, age: 0,
+    }));
+  }
+
+  spawn(type, x, y) {
+    for (const d of this.pool) {
+      if (!d.alive) {
+        d.alive = true;
+        d.type = type;
+        d.x = x;
+        d.y = y;
+        d.age = 0;
+        return d;
+      }
+    }
+    return null;
+  }
+
+  update(dt) {
+    for (const d of this.pool) {
+      if (!d.alive) continue;
+      d.age += dt;
+      if (d.age > CFG.DROP_MAX_AGE) d.alive = false;
+    }
+  }
+
+  forEach(fn) {
+    for (const d of this.pool) {
+      if (d.alive) fn(d);
+    }
+  }
+
+  reset() {
+    for (const d of this.pool) d.alive = false;
+  }
+}
+
+// ============================================================
+// 3e. ENEMY MANAGER
 // ============================================================
 class EnemyManager {
-  constructor(enemyPool) {
+  constructor(enemyPool, dropPool) {
     this.pool = enemyPool;
+    this.dropPool = dropPool;
     this.spawnTimer = 0;
+  }
+
+  _trySpawnDrop(x, y) {
+    if (Math.random() < CFG.DROP_CHANCE) {
+      this.dropPool.spawn(rollDropType(), x, y);
+    }
   }
 
   update(dt, player, camera, canvas, elapsed) {
@@ -702,12 +819,14 @@ class EnemyManager {
       const pdy = player.y - e.y;
       const dist = Math.sqrt(pdx * pdx + pdy * pdy);
       if (dist < e.radius + CFG.PLAYER_RADIUS && e.hitCooldown <= 0) {
-        player.takeDamage(e.damage);
+        if (player.shieldTimer <= 0) player.takeDamage(e.damage);
         e.hp -= CFG.BULLET_DAMAGE;
         if (e.hp <= 0) {
           e.alive = false;
-          player.score += e.points;
+          const mult = player.scoreMultTimer > 0 ? 2 : 1;
+          player.score += e.points * mult;
           player.kills++;
+          this._trySpawnDrop(e.x, e.y);
         }
         e.hitCooldown = CFG.HIT_COOLDOWN;
       }
@@ -737,19 +856,39 @@ class EnemyManager {
   }
 
   bulletCollision(bulletPool, player) {
+    const mult = player.scoreMultTimer > 0 ? 2 : 1;
     bulletPool.forEach(b => {
       this.pool.forEach(e => {
         const dx = b.x - e.x;
         const dy = b.y - e.y;
         const dist = dx * dx + dy * dy;
-        const hitR = e.radius + 4;
+        const hitR = e.radius + (b.isRocket ? 8 : 4);
         if (dist < hitR * hitR) {
           e.hp -= b.damage;
           b.alive = false;
           if (e.hp <= 0) {
             e.alive = false;
-            player.score += e.points;
+            player.score += e.points * mult;
             player.kills++;
+            this._trySpawnDrop(e.x, e.y);
+          }
+          // rocket splash damage
+          if (b.isRocket) {
+            const bx = b.x, by = b.y;
+            const sr2 = CFG.ROCKET_SPLASH_RADIUS * CFG.ROCKET_SPLASH_RADIUS;
+            this.pool.forEach(other => {
+              if (other === e) return;
+              const sdx = bx - other.x, sdy = by - other.y;
+              if (sdx * sdx + sdy * sdy < sr2) {
+                other.hp -= CFG.ROCKET_SPLASH_DAMAGE;
+                if (other.hp <= 0) {
+                  other.alive = false;
+                  player.score += other.points * mult;
+                  player.kills++;
+                  this._trySpawnDrop(other.x, other.y);
+                }
+              }
+            });
           }
         }
       });
@@ -1040,6 +1179,61 @@ class Player {
     this.alive = true;
     this.fireCooldown = 0;
     this.flashTimer = 0;
+    // powerup state
+    this.baseFireRate = cfg.fireRate;
+    this.baseMaxSpeed = cfg.speed;
+    this.activeWeapon = null;   // 'spread' | 'rapid' | 'rocket' | null
+    this.weaponTimer = 0;
+    this.shieldTimer = 0;
+    this.speedBoostTimer = 0;
+    this.scoreMultTimer = 0;
+  }
+
+  applyDrop(type, enemyPool) {
+    const cfg = DROP_TYPES[type];
+    switch (type) {
+      case 'spread':
+      case 'rocket':
+        this.activeWeapon = type;
+        this.weaponTimer = cfg.duration;
+        this.fireRate = this.baseFireRate;
+        break;
+      case 'rapid':
+        this.activeWeapon = 'rapid';
+        this.weaponTimer = cfg.duration;
+        this.fireRate = this.baseFireRate / 2;
+        break;
+      case 'hp':
+        this.hp = Math.min(this.maxHp, this.hp + 30);
+        break;
+      case 'speed':
+        this.speedBoostTimer = cfg.duration;
+        this.maxSpeed = this.baseMaxSpeed * 1.5;
+        break;
+      case 'shield':
+        this.shieldTimer = cfg.duration;
+        break;
+      case 'score2x':
+        this.scoreMultTimer = cfg.duration;
+        break;
+      case 'magnet':
+        // instant AoE blast
+        if (enemyPool) {
+          const m = this.scoreMultTimer > 0 ? 2 : 1;
+          enemyPool.forEach(e => {
+            const dx = this.x - e.x, dy = this.y - e.y;
+            if (dx * dx + dy * dy < CFG.MAGNET_RADIUS * CFG.MAGNET_RADIUS) {
+              e.hp -= CFG.MAGNET_DAMAGE;
+              if (e.hp <= 0) {
+                e.alive = false;
+                this.score += e.points * m;
+                this.kills++;
+              }
+            }
+          });
+        }
+        break;
+    }
   }
 
   update(input, dt) {
@@ -1047,6 +1241,23 @@ class Player {
     const dtSec = dt / 1000;
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
     if (this.flashTimer > 0) this.flashTimer -= dt;
+
+    // tick powerup timers
+    if (this.weaponTimer > 0) {
+      this.weaponTimer -= dt;
+      if (this.weaponTimer <= 0) {
+        this.activeWeapon = null;
+        this.fireRate = this.baseFireRate;
+      }
+    }
+    if (this.shieldTimer > 0) this.shieldTimer -= dt;
+    if (this.speedBoostTimer > 0) {
+      this.speedBoostTimer -= dt;
+      if (this.speedBoostTimer <= 0) {
+        this.maxSpeed = this.baseMaxSpeed;
+      }
+    }
+    if (this.scoreMultTimer > 0) this.scoreMultTimer -= dt;
 
     // acceleration / braking
     if (input.isDown('ArrowUp') || input.isDown('KeyW')) {
@@ -1081,11 +1292,13 @@ class Player {
     this.x += Math.cos(this.angle) * this.speed * dtSec;
     this.y += Math.sin(this.angle) * this.speed * dtSec;
 
-    // score from distance
-    this.score += Math.abs(this.speed) * dtSec * 0.1;
+    // score from distance (with multiplier)
+    const mult = this.scoreMultTimer > 0 ? 2 : 1;
+    this.score += Math.abs(this.speed) * dtSec * 0.1 * mult;
   }
 
   takeDamage(amount) {
+    if (this.shieldTimer > 0) return;
     this.hp -= amount;
     this.flashTimer = 150;
     if (this.hp <= 0) {
@@ -1239,6 +1452,19 @@ class Renderer {
 
   drawPlayer(player) {
     const ctx = this.ctx;
+    // shield bubble
+    if (player.shieldTimer > 0) {
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      ctx.beginPath();
+      ctx.arc(0, 0, 28, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fill();
+      ctx.restore();
+    }
     ctx.save();
     ctx.translate(player.x, player.y);
     ctx.rotate(player.angle);
@@ -1295,10 +1521,64 @@ class Renderer {
       ctx.save();
       ctx.translate(b.x, b.y);
       ctx.rotate(b.angle);
-      ctx.fillStyle = '#ffee44';
-      ctx.fillRect(-2, -4, 4, 8);
-      ctx.fillStyle = 'rgba(255,255,200,0.5)';
-      ctx.fillRect(-1, -2, 2, 4);
+      if (b.isRocket) {
+        // exhaust glow
+        ctx.fillStyle = 'rgba(255,120,30,0.25)';
+        ctx.beginPath();
+        ctx.arc(0, 0, 10, 0, Math.PI * 2);
+        ctx.fill();
+        // body
+        ctx.fillStyle = '#ff3333';
+        ctx.fillRect(-5, -8, 10, 16);
+        // nose
+        ctx.fillStyle = '#ff6644';
+        ctx.fillRect(-3, -10, 6, 4);
+        // tail flame
+        ctx.fillStyle = '#ffaa22';
+        ctx.fillRect(-3, 6, 6, 5);
+        ctx.fillStyle = 'rgba(255,200,50,0.6)';
+        ctx.fillRect(-2, 9, 4, 4);
+      } else {
+        ctx.fillStyle = '#ffee44';
+        ctx.fillRect(-2, -4, 4, 8);
+        ctx.fillStyle = 'rgba(255,255,200,0.5)';
+        ctx.fillRect(-1, -2, 2, 4);
+      }
+      ctx.restore();
+    });
+  }
+
+  drawDrops(dropPool) {
+    const ctx = this.ctx;
+    dropPool.forEach(d => {
+      const cfg = DROP_TYPES[d.type];
+      // blink when about to expire
+      if (d.age > CFG.DROP_BLINK_AGE && Math.floor(d.age / 150) % 2 === 0) return;
+      ctx.save();
+      ctx.translate(d.x, d.y);
+      // diamond shape
+      ctx.beginPath();
+      ctx.moveTo(0, -8);
+      ctx.lineTo(6, 0);
+      ctx.lineTo(0, 8);
+      ctx.lineTo(-6, 0);
+      ctx.closePath();
+      ctx.fillStyle = cfg.color;
+      ctx.fill();
+      // glow
+      ctx.shadowColor = cfg.color;
+      ctx.shadowBlur = 10;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      // inner highlight
+      ctx.beginPath();
+      ctx.moveTo(0, -4);
+      ctx.lineTo(3, 0);
+      ctx.lineTo(0, 4);
+      ctx.lineTo(-3, 0);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.fill();
       ctx.restore();
     });
   }
@@ -1351,10 +1631,11 @@ class Renderer {
     ctx.textAlign = 'left';
   }
 
-  render(camera, chunkManager, player, enemyPool, bulletPool, debugGame) {
+  render(camera, chunkManager, player, enemyPool, bulletPool, dropPool, debugGame) {
     this.clear();
     camera.applyTransform(this.ctx, this.canvas);
     this.drawChunks(camera, chunkManager);
+    this.drawDrops(dropPool);
     this.drawEnemies(enemyPool);
     this.drawBullets(bulletPool);
     this.drawPlayer(player);
@@ -1373,6 +1654,7 @@ class HUD {
     this.scoreEl = document.getElementById('hud-score');
     this.killsEl = document.getElementById('hud-kills');
     this.timeEl = document.getElementById('hud-time');
+    this.powerupsEl = document.getElementById('hud-powerups');
   }
 
   show() { this.el.classList.remove('hidden'); }
@@ -1394,6 +1676,31 @@ class HUD {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
     this.timeEl.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+
+    // powerup indicators
+    const pups = [];
+    if (player.activeWeapon) {
+      const cfg = DROP_TYPES[player.activeWeapon];
+      pups.push({ label: player.activeWeapon.toUpperCase(), color: cfg.color, pct: player.weaponTimer / cfg.duration });
+    }
+    if (player.shieldTimer > 0) pups.push({ label: 'SHIELD', color: '#fff', pct: player.shieldTimer / DROP_TYPES.shield.duration });
+    if (player.speedBoostTimer > 0) pups.push({ label: 'SPEED', color: '#00f0ff', pct: player.speedBoostTimer / DROP_TYPES.speed.duration });
+    if (player.scoreMultTimer > 0) pups.push({ label: '×2', color: '#ffd700', pct: player.scoreMultTimer / DROP_TYPES.score2x.duration });
+
+    // rebuild only when count changes
+    if (pups.length !== this.powerupsEl.children.length) {
+      this.powerupsEl.innerHTML = pups.map(() =>
+        '<div class="powerup-pip"><span></span><div class="powerup-pip-bar"><div class="powerup-pip-fill"></div></div></div>'
+      ).join('');
+    }
+    const children = this.powerupsEl.children;
+    for (let i = 0; i < pups.length; i++) {
+      const p = pups[i];
+      children[i].querySelector('span').textContent = p.label;
+      const fill = children[i].querySelector('.powerup-pip-fill');
+      fill.style.width = (p.pct * 100) + '%';
+      fill.style.background = p.color;
+    }
   }
 }
 
@@ -1414,7 +1721,8 @@ class Game {
     this.player = null;
     this.enemyPool = new EnemyPool();
     this.bulletPool = new BulletPool();
-    this.enemyManager = new EnemyManager(this.enemyPool);
+    this.dropPool = new DropPool();
+    this.enemyManager = new EnemyManager(this.enemyPool, this.dropPool);
     this.playStartTime = 0;
     this.elapsedMs = 0;
     this.accumulator = 0;
@@ -1506,6 +1814,7 @@ class Game {
     this.chunkManager.update(this.camera.x, this.camera.y, this.canvas.width, this.canvas.height);
     this.enemyManager.reset();
     this.bulletPool.reset();
+    this.dropPool.reset();
     this.elapsedMs = saveData.elapsed;
     this.accumulator = 0;
     this.lastTime = performance.now();
@@ -1525,6 +1834,7 @@ class Game {
     this.chunkManager.update(0, 0, this.canvas.width, this.canvas.height);
     this.enemyManager.reset();
     this.bulletPool.reset();
+    this.dropPool.reset();
     this.playStartTime = performance.now();
     this.elapsedMs = 0;
     this.accumulator = 0;
@@ -1574,7 +1884,7 @@ class Game {
     this.camera.follow(this.player.x, this.player.y, frameDt);
     this.chunkManager.update(this.camera.x, this.camera.y, this.canvas.width, this.canvas.height);
     this.chunkManager.generatePending(4);
-    this.renderer.render(this.camera, this.chunkManager, this.player, this.enemyPool, this.bulletPool, this.debugOverlay ? this : null);
+    this.renderer.render(this.camera, this.chunkManager, this.player, this.enemyPool, this.bulletPool, this.dropPool, this.debugOverlay ? this : null);
     this.hud.update(this.player, this.elapsedMs);
 
     requestAnimationFrame(t => this.loop(t));
@@ -1588,12 +1898,34 @@ class Game {
     if (this.input.isDown('Space') && this.player.fireCooldown <= 0 && this.player.alive) {
       const bx = this.player.x + Math.cos(this.player.angle) * 22;
       const by = this.player.y + Math.sin(this.player.angle) * 22;
-      this.bulletPool.fire(bx, by, this.player.angle);
+      const w = this.player.activeWeapon;
+      if (w === 'spread') {
+        const spread = Math.PI / 12; // 15°
+        this.bulletPool.fire(bx, by, this.player.angle - spread);
+        this.bulletPool.fire(bx, by, this.player.angle);
+        this.bulletPool.fire(bx, by, this.player.angle + spread);
+      } else if (w === 'rocket') {
+        this.bulletPool.fire(bx, by, this.player.angle, true);
+      } else {
+        this.bulletPool.fire(bx, by, this.player.angle);
+      }
       this.player.fireCooldown = this.player.fireRate;
     }
 
     // update bullets
     this.bulletPool.update(dt);
+
+    // update drops
+    this.dropPool.update(dt);
+
+    // drop pickup
+    this.dropPool.forEach(d => {
+      const dx = this.player.x - d.x, dy = this.player.y - d.y;
+      if (dx * dx + dy * dy < CFG.DROP_PICKUP_RADIUS * CFG.DROP_PICKUP_RADIUS) {
+        this.player.applyDrop(d.type, this.enemyPool);
+        d.alive = false;
+      }
+    });
 
     // update enemies (spawning, AI, player collision)
     this.enemyManager.update(dt, this.player, this.camera, this.canvas, this.elapsedMs);
