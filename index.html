@@ -212,6 +212,59 @@
   }
 
   #retry-btn:hover { opacity: 0.85; }
+
+  /* ---- Pause Screen ---- */
+  #pause-screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(26, 26, 46, 0.92);
+    z-index: 10;
+  }
+
+  #pause-screen.hidden { display: none; }
+
+  #pause-screen h2 {
+    font-size: 2.2rem;
+    color: var(--accent);
+    margin-bottom: 1.5rem;
+  }
+
+  #pause-screen button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 12px 48px;
+    font-size: 1.1rem;
+    font-family: inherit;
+    border-radius: 6px;
+    cursor: pointer;
+    letter-spacing: 0.1rem;
+    transition: opacity 0.15s;
+    margin-bottom: 0.75rem;
+  }
+
+  #pause-screen button:hover { opacity: 0.85; }
+
+  /* ---- Menu Resume Button ---- */
+  #resume-save-btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 12px 48px;
+    font-size: 1.1rem;
+    font-family: inherit;
+    border-radius: 6px;
+    cursor: pointer;
+    letter-spacing: 0.1rem;
+    transition: opacity 0.15s;
+    margin-bottom: 0.75rem;
+  }
+
+  #resume-save-btn:hover { opacity: 0.85; }
 </style>
 </head>
 <body>
@@ -223,6 +276,7 @@
   <p class="subtitle">survive the wasteland</p>
   <div class="car-selector" id="car-selector"></div>
   <div class="color-picker" id="color-picker"></div>
+  <button id="resume-save-btn" class="hidden">RESUME</button>
   <button id="start-btn">START</button>
 </div>
 
@@ -233,6 +287,12 @@
   <div class="hud-item" id="hud-score">Score: 0</div>
   <div class="hud-item" id="hud-kills">Kills: 0</div>
   <div class="hud-item" id="hud-time">0:00</div>
+</div>
+
+<div id="pause-screen" class="hidden">
+  <h2>PAUSED</h2>
+  <button id="resume-btn">RESUME</button>
+  <button id="quit-btn">QUIT TO MENU</button>
 </div>
 
 <div id="game-over" class="hidden">
@@ -564,6 +624,12 @@ class EnemyManager {
       const dist = Math.sqrt(pdx * pdx + pdy * pdy);
       if (dist < e.radius + CFG.PLAYER_RADIUS && e.hitCooldown <= 0) {
         player.takeDamage(e.damage);
+        e.hp -= CFG.BULLET_DAMAGE;
+        if (e.hp <= 0) {
+          e.alive = false;
+          player.score += e.points;
+          player.kills++;
+        }
         e.hitCooldown = CFG.HIT_COOLDOWN;
       }
     });
@@ -1234,7 +1300,7 @@ class HUD {
 // ============================================================
 // 11. GAME (state machine + loop)
 // ============================================================
-const Phase = { MENU: 'menu', PLAYING: 'playing', DEAD: 'dead' };
+const Phase = { MENU: 'menu', PLAYING: 'playing', PAUSED: 'paused', DEAD: 'dead' };
 
 class Game {
   constructor() {
@@ -1257,18 +1323,101 @@ class Game {
     this.debugOverlay = false;
     window.addEventListener('keydown', e => {
       if (e.code === 'Backquote') this.debugOverlay = !this.debugOverlay;
+      if (e.code === 'Escape') {
+        if (this.phase === Phase.PLAYING) this.pause();
+        else if (this.phase === Phase.PAUSED) this.resume();
+      }
     });
   }
 
   showScreen(phase) {
     document.getElementById('menu-screen').classList.toggle('hidden', phase !== Phase.MENU);
+    document.getElementById('pause-screen').classList.toggle('hidden', phase !== Phase.PAUSED);
     document.getElementById('game-over').classList.toggle('hidden', phase !== Phase.DEAD);
     if (phase === Phase.PLAYING) this.hud.show();
     else this.hud.hide();
     this.phase = phase;
   }
 
+  saveToStorage() {
+    const p = this.player;
+    const data = {
+      player: {
+        x: p.x, y: p.y, angle: p.angle, speed: p.speed,
+        hp: p.hp, carType: p.carType, color: p.color,
+        score: p.score, kills: p.kills,
+        maxSpeed: p.maxSpeed, turnRate: p.turnRate,
+        maxHp: p.maxHp, fireRate: p.fireRate,
+      },
+      camera: { x: this.camera.x, y: this.camera.y },
+      elapsed: this.elapsedMs,
+    };
+    localStorage.setItem('deaddrift_save', JSON.stringify(data));
+  }
+
+  loadFromStorage() {
+    const raw = localStorage.getItem('deaddrift_save');
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+
+  clearSave() {
+    localStorage.removeItem('deaddrift_save');
+  }
+
+  pause() {
+    this.saveToStorage();
+    this.showScreen(Phase.PAUSED);
+    // loop will exit on next frame because phase !== PLAYING
+  }
+
+  resume() {
+    this.showScreen(Phase.PLAYING);
+    this.lastTime = performance.now();
+    this.accumulator = 0;
+    if (!this.running) {
+      this.running = true;
+      requestAnimationFrame(t => this.loop(t));
+    }
+  }
+
+  quitToMenu() {
+    this.clearSave();
+    this.showScreen(Phase.MENU);
+  }
+
+  startFromSave(saveData) {
+    const s = saveData.player;
+    this.player = new Player(s.carType, s.color);
+    this.player.x = s.x;
+    this.player.y = s.y;
+    this.player.angle = s.angle;
+    this.player.speed = s.speed;
+    this.player.hp = s.hp;
+    this.player.score = s.score;
+    this.player.kills = s.kills;
+    this.player.maxSpeed = s.maxSpeed;
+    this.player.turnRate = s.turnRate;
+    this.player.maxHp = s.maxHp;
+    this.player.fireRate = s.fireRate;
+    this.camera.x = saveData.camera.x;
+    this.camera.y = saveData.camera.y;
+    this.chunkManager = new ChunkManager();
+    this.chunkManager.update(this.camera.x, this.camera.y, this.canvas.width, this.canvas.height);
+    this.enemyManager.reset();
+    this.bulletPool.reset();
+    this.elapsedMs = saveData.elapsed;
+    this.accumulator = 0;
+    this.lastTime = performance.now();
+    this.showScreen(Phase.PLAYING);
+    if (!this.running) {
+      this.running = true;
+      requestAnimationFrame(t => this.loop(t));
+    }
+  }
+
   startPlaying(carType, color) {
+    this.clearSave();
     this.player = new Player(carType, color);
     this.camera.x = 0;
     this.camera.y = 0;
@@ -1289,6 +1438,7 @@ class Game {
 
   die() {
     this.player.alive = false;
+    this.clearSave();
     const stats = document.getElementById('go-stats');
     const secs = Math.floor(this.elapsedMs / 1000);
     const m = Math.floor(secs / 60);
@@ -1438,6 +1588,22 @@ function setupMenu(game) {
 
   renderPreviews();
 
+  // --- Resume save button (menu) ---
+  const resumeSaveBtn = document.getElementById('resume-save-btn');
+  function updateResumeButton() {
+    const save = game.loadFromStorage();
+    if (save) {
+      resumeSaveBtn.classList.remove('hidden');
+    } else {
+      resumeSaveBtn.classList.add('hidden');
+    }
+  }
+
+  resumeSaveBtn.addEventListener('click', () => {
+    const save = game.loadFromStorage();
+    if (save) game.startFromSave(save);
+  });
+
   // --- Start button ---
   document.getElementById('start-btn').addEventListener('click', () => {
     game.startPlaying(selectedCar, selectedColor);
@@ -1446,8 +1612,23 @@ function setupMenu(game) {
   // --- Retry button ---
   document.getElementById('retry-btn').addEventListener('click', () => {
     game.showScreen(Phase.MENU);
+    updateResumeButton();
     renderPreviews();
   });
+
+  // --- Pause screen buttons ---
+  document.getElementById('resume-btn').addEventListener('click', () => {
+    game.resume();
+  });
+
+  document.getElementById('quit-btn').addEventListener('click', () => {
+    game.quitToMenu();
+    updateResumeButton();
+    renderPreviews();
+  });
+
+  // Check for save on initial load
+  updateResumeButton();
 }
 
 // ============================================================
