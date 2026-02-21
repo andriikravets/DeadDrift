@@ -1430,6 +1430,126 @@ function drawCar(ctx, carType, color) {
   if (fn) fn(ctx, color);
 }
 
+const EnemyRenderer = {
+  shambler(ctx, color) {
+    // wheels (mismatched sizes)
+    ctx.fillStyle = '#222';
+    ctx.fillRect(-7, -10, 6, 3);
+    ctx.fillRect(-8, 7, 7, 4);
+    ctx.fillRect(4, -10, 7, 3);
+    ctx.fillRect(5, 7, 6, 3);
+    // boxy body with dented look
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(-10, -6);
+    ctx.lineTo(9, -7);
+    ctx.lineTo(10, -4);
+    ctx.lineTo(10, 5);
+    ctx.lineTo(8, 7);
+    ctx.lineTo(-9, 6);
+    ctx.lineTo(-10, 3);
+    ctx.closePath();
+    ctx.fill();
+    // cracked windshield (jagged lines)
+    ctx.strokeStyle = 'rgba(150,200,255,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(5, -5);
+    ctx.lineTo(7, -2);
+    ctx.lineTo(5, 0);
+    ctx.lineTo(7, 3);
+    ctx.lineTo(5, 5);
+    ctx.stroke();
+    // headlights (dim)
+    ctx.fillStyle = '#cc6';
+    ctx.fillRect(9, -5, 2, 3);
+    ctx.fillRect(9, 2, 2, 3);
+    // exhaust puff
+    ctx.fillStyle = 'rgba(80,80,80,0.3)';
+    ctx.beginPath();
+    ctx.arc(-13, 2, 3, 0, Math.PI * 2);
+    ctx.fill();
+  },
+
+  runner(ctx, color) {
+    // two wheels (front/back only)
+    ctx.fillStyle = '#222';
+    ctx.beginPath();
+    ctx.arc(-6, 0, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(6, 0, 3, 0, Math.PI * 2);
+    ctx.fill();
+    // narrow elongated body / frame
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(-7, -3, 14, 6, 2);
+    ctx.fill();
+    // exposed frame lines
+    ctx.strokeStyle = shadeColor(color, -40);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-5, -2);
+    ctx.lineTo(5, -2);
+    ctx.moveTo(-5, 2);
+    ctx.lineTo(5, 2);
+    ctx.stroke();
+    // handlebars
+    ctx.strokeStyle = '#aaa';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(6, -5);
+    ctx.lineTo(8, -3);
+    ctx.lineTo(8, 3);
+    ctx.lineTo(6, 5);
+    ctx.stroke();
+    // headlight
+    ctx.fillStyle = '#ff6';
+    ctx.fillRect(8, -1, 2, 2);
+  },
+
+  brute(ctx, color) {
+    // thick wheels
+    ctx.fillStyle = '#222';
+    ctx.fillRect(-13, -14, 10, 5);
+    ctx.fillRect(-13, 9, 10, 5);
+    ctx.fillRect(6, -14, 10, 5);
+    ctx.fillRect(6, 9, 10, 5);
+    // large boxy body
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(-16, -10, 32, 20, 3);
+    ctx.fill();
+    // armored plating lines
+    ctx.strokeStyle = shadeColor(color, -30);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-10, -9);
+    ctx.lineTo(-10, 9);
+    ctx.moveTo(0, -9);
+    ctx.lineTo(0, 9);
+    ctx.moveTo(10, -9);
+    ctx.lineTo(10, 9);
+    ctx.stroke();
+    // front ram bar / bull bar
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(16, -9);
+    ctx.lineTo(18, -7);
+    ctx.lineTo(18, 7);
+    ctx.lineTo(16, 9);
+    ctx.stroke();
+    // windshield (narrow slit)
+    ctx.fillStyle = 'rgba(150,200,255,0.4)';
+    ctx.fillRect(11, -6, 4, 12);
+    // headlights
+    ctx.fillStyle = '#ff6';
+    ctx.fillRect(16, -8, 2, 4);
+    ctx.fillRect(16, 4, 2, 4);
+  },
+};
+
 // ============================================================
 // 9. RENDERER
 // ============================================================
@@ -1496,19 +1616,22 @@ class Renderer {
       ctx.save();
       ctx.translate(e.x, e.y);
 
-      // body
-      ctx.beginPath();
-      ctx.arc(0, 0, e.radius, 0, Math.PI * 2);
-      ctx.fillStyle = e.color;
-      ctx.fill();
+      // vehicle sprite
+      ctx.save();
+      ctx.rotate(e.angle);
+      ctx.scale(1.4, 1.4);
+      const drawFn = EnemyRenderer[e.type];
+      if (drawFn) {
+        drawFn(ctx, e.color);
+      } else {
+        ctx.beginPath();
+        ctx.arc(0, 0, e.radius, 0, Math.PI * 2);
+        ctx.fillStyle = e.color;
+        ctx.fill();
+      }
+      ctx.restore();
 
-      // inner detail
-      ctx.beginPath();
-      ctx.arc(0, 0, e.radius * 0.5, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,255,255,0.15)';
-      ctx.fill();
-
-      // HP bar (only when damaged)
+      // HP bar (only when damaged) — drawn without rotation
       if (e.hp < e.maxHp) {
         const bw = e.radius * 2.5;
         const bh = 3;
@@ -1842,6 +1965,8 @@ class Game {
     this.camera.y = 0;
     this.chunkManager = new ChunkManager();
     this.chunkManager.update(0, 0, this.canvas.width, this.canvas.height);
+    // pre-generate all hot-buffer chunks so the map is ready before gameplay
+    this.chunkManager.generatePending(Infinity);
     this.enemyManager.reset();
     this.bulletPool.reset();
     this.dropPool.reset();
