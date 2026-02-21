@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeadDrift</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --surface: #16213e;
+    --accent: #e94560;
+    --text: #eee;
+    --text-dim: #888;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+  }
+
+  #game-canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+  }
+
+  /* ---- Menu Screen ---- */
+  #menu-screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    z-index: 10;
+  }
+
+  #menu-screen.hidden { display: none; }
+
+  #menu-screen h1 {
+    font-size: 3rem;
+    color: var(--accent);
+    margin-bottom: 0.25rem;
+    letter-spacing: 0.3rem;
+  }
+
+  #menu-screen .subtitle {
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+  }
+
+  .car-selector {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .car-card {
+    background: var(--surface);
+    border: 2px solid transparent;
+    border-radius: 8px;
+    padding: 10px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 120px;
+    transition: border-color 0.15s;
+  }
+
+  .car-card:hover { border-color: var(--text-dim); }
+  .car-card.selected { border-color: var(--accent); }
+
+  .car-card canvas {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 6px;
+  }
+
+  .car-card .car-name {
+    font-size: 0.85rem;
+    font-weight: bold;
+    margin-bottom: 2px;
+  }
+
+  .car-card .car-stats {
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    text-align: center;
+    line-height: 1.4;
+  }
+
+  .color-picker {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .color-swatch {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.1s;
+  }
+
+  .color-swatch:hover { transform: scale(1.15); }
+  .color-swatch.selected { border-color: #fff; transform: scale(1.15); }
+
+  #start-btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 12px 48px;
+    font-size: 1.1rem;
+    font-family: inherit;
+    border-radius: 6px;
+    cursor: pointer;
+    letter-spacing: 0.1rem;
+    transition: opacity 0.15s;
+  }
+
+  #start-btn:hover { opacity: 0.85; }
+
+  /* ---- HUD ---- */
+  #hud {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 10px 20px;
+    z-index: 5;
+    pointer-events: none;
+  }
+
+  #hud.hidden { display: none; }
+
+  .hud-item {
+    font-size: 0.8rem;
+    color: var(--text);
+  }
+
+  .hp-bar-outer {
+    width: 120px;
+    height: 12px;
+    background: #333;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .hp-bar-inner {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.15s;
+  }
+
+  /* ---- Game Over ---- */
+  #game-over {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(26, 26, 46, 0.92);
+    z-index: 10;
+  }
+
+  #game-over.hidden { display: none; }
+
+  #game-over h2 {
+    font-size: 2.2rem;
+    color: var(--accent);
+    margin-bottom: 1rem;
+  }
+
+  #game-over .stats {
+    font-size: 0.9rem;
+    color: var(--text-dim);
+    line-height: 1.8;
+    margin-bottom: 1.5rem;
+    text-align: center;
+  }
+
+  #retry-btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 12px 48px;
+    font-size: 1.1rem;
+    font-family: inherit;
+    border-radius: 6px;
+    cursor: pointer;
+    letter-spacing: 0.1rem;
+    transition: opacity 0.15s;
+  }
+
+  #retry-btn:hover { opacity: 0.85; }
+</style>
+</head>
+<body>
+
+<canvas id="game-canvas"></canvas>
+
+<div id="menu-screen">
+  <h1>DEAD DRIFT</h1>
+  <p class="subtitle">survive the wasteland</p>
+  <div class="car-selector" id="car-selector"></div>
+  <div class="color-picker" id="color-picker"></div>
+  <button id="start-btn">START</button>
+</div>
+
+<div id="hud" class="hidden">
+  <div class="hud-item">
+    <div class="hp-bar-outer"><div class="hp-bar-inner" id="hp-bar"></div></div>
+  </div>
+  <div class="hud-item" id="hud-score">Score: 0</div>
+  <div class="hud-item" id="hud-kills">Kills: 0</div>
+  <div class="hud-item" id="hud-time">0:00</div>
+</div>
+
+<div id="game-over" class="hidden">
+  <h2>WRECKED</h2>
+  <div class="stats" id="go-stats"></div>
+  <button id="retry-btn">TRY AGAIN</button>
+</div>
+
+<script>
+// ============================================================
+// 1. CONFIG
+// ============================================================
+const CFG = {
+  TILE: 48,
+  CHUNK: 16,
+  FIXED_DT: 1000 / 60,
+  MAX_FRAME_DT: 250,
+  CAMERA_LERP: 0.08,
+  BIOME_SCALE: 0.0005,     // large biomes (~40+ tiles / several screens)
+  MOISTURE_SCALE: 0.0007,  // moisture regions (~30 tiles)
+  DETAIL_SCALE: 0.004,     // local sub-features (~5-8 tiles)
+  DECORATION_CHANCE: 0.08,
+};
+
+CFG.CHUNK_PX = CFG.CHUNK * CFG.TILE; // 768
+
+const TERRAIN = {
+  GRASS:    { color: '#4a7c59', rgb: [74, 124, 89],  speed: 1.0 },
+  DIRT:     { color: '#8b7355', rgb: [139, 115, 85], speed: 0.95 },
+  GRAVEL:   { color: '#7a7a7a', rgb: [122, 122, 122], speed: 0.85 },
+  MUD:      { color: '#5c4033', rgb: [92, 64, 51],   speed: 0.65 },
+  DRY_EARTH:{ color: '#c2a878', rgb: [194, 168, 120], speed: 0.9 },
+};
+
+const CAR_TYPES = {
+  sedan: { name: 'Sedan',  speed: 200, turn: 3.0, hp: 100, fireRate: 250 },
+  truck: { name: 'Truck',  speed: 150, turn: 2.0, hp: 180, fireRate: 400 },
+  buggy: { name: 'Buggy',  speed: 280, turn: 4.0, hp: 60,  fireRate: 200 },
+  suv:   { name: 'SUV',    speed: 180, turn: 2.5, hp: 140, fireRate: 300 },
+};
+
+const CAR_COLORS = [
+  { name: 'Crimson',  hex: '#dc3545' },
+  { name: 'Amber',    hex: '#f59e0b' },
+  { name: 'Forest',   hex: '#22c55e' },
+  { name: 'Cobalt',   hex: '#3b82f6' },
+  { name: 'Slate',    hex: '#64748b' },
+  { name: 'Obsidian', hex: '#1e1e1e' },
+  { name: 'Pearl',    hex: '#e8e8e8' },
+  { name: 'Rust',     hex: '#b45309' },
+];
+
+// ============================================================
+// 2. SIMPLEX NOISE (Stefan Gustavson, public domain)
+// ============================================================
+const SimplexNoise = (() => {
+  const F2 = 0.5 * (Math.sqrt(3) - 1);
+  const G2 = (3 - Math.sqrt(3)) / 6;
+  const grad3 = [
+    [1,1],[-1,1],[1,-1],[-1,-1],
+    [1,0],[-1,0],[0,1],[0,-1],
+  ];
+
+  function buildPerm(seed) {
+    const p = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) p[i] = i;
+    // Fisher-Yates with seed
+    let s = seed | 0;
+    for (let i = 255; i > 0; i--) {
+      s = (s * 16807 + 0) % 2147483647;
+      const j = s % (i + 1);
+      [p[i], p[j]] = [p[j], p[i]];
+    }
+    const perm = new Uint8Array(512);
+    const permMod8 = new Uint8Array(512);
+    for (let i = 0; i < 512; i++) {
+      perm[i] = p[i & 255];
+      permMod8[i] = perm[i] % 8;
+    }
+    return { perm, permMod8 };
+  }
+
+  function create(seed = 42) {
+    const { perm, permMod8 } = buildPerm(seed);
+
+    return function noise2D(xin, yin) {
+      const s = (xin + yin) * F2;
+      const i = Math.floor(xin + s);
+      const j = Math.floor(yin + s);
+      const t = (i + j) * G2;
+      const X0 = i - t, Y0 = j - t;
+      const x0 = xin - X0, y0 = yin - Y0;
+
+      let i1, j1;
+      if (x0 > y0) { i1 = 1; j1 = 0; }
+      else { i1 = 0; j1 = 1; }
+
+      const x1 = x0 - i1 + G2, y1 = y0 - j1 + G2;
+      const x2 = x0 - 1 + 2 * G2, y2 = y0 - 1 + 2 * G2;
+
+      const ii = i & 255, jj = j & 255;
+
+      let n0 = 0, n1 = 0, n2 = 0;
+
+      let t0 = 0.5 - x0 * x0 - y0 * y0;
+      if (t0 >= 0) {
+        t0 *= t0;
+        const gi = permMod8[ii + perm[jj]];
+        n0 = t0 * t0 * (grad3[gi][0] * x0 + grad3[gi][1] * y0);
+      }
+
+      let t1 = 0.5 - x1 * x1 - y1 * y1;
+      if (t1 >= 0) {
+        t1 *= t1;
+        const gi = permMod8[ii + i1 + perm[jj + j1]];
+        n1 = t1 * t1 * (grad3[gi][0] * x1 + grad3[gi][1] * y1);
+      }
+
+      let t2 = 0.5 - x2 * x2 - y2 * y2;
+      if (t2 >= 0) {
+        t2 *= t2;
+        const gi = permMod8[ii + 1 + perm[jj + 1]];
+        n2 = t2 * t2 * (grad3[gi][0] * x2 + grad3[gi][1] * y2);
+      }
+
+      return 70 * (n0 + n1 + n2); // [-1, 1]
+    };
+  }
+
+  return { create };
+})();
+
+// ============================================================
+// 3. TERRAIN MODULE
+// ============================================================
+const TerrainSampler = (() => {
+  const biomeNoise = SimplexNoise.create(42);
+  const moistureNoise = SimplexNoise.create(137);
+  const detailNoise = SimplexNoise.create(255);
+
+  function sample(wx, wy) {
+    const elev = biomeNoise(wx * CFG.BIOME_SCALE, wy * CFG.BIOME_SCALE);
+    const moist = moistureNoise(wx * CFG.MOISTURE_SCALE, wy * CFG.MOISTURE_SCALE);
+    const d = detailNoise(wx * CFG.DETAIL_SCALE, wy * CFG.DETAIL_SCALE);
+
+    // Detail noise perturbs the biome boundaries → organic, fractal-like edges
+    const e = elev + d * 0.12;
+    const m = moist + d * 0.10;
+
+    // 2D biome selection (elevation × moisture)
+    //              dry          mid           wet
+    // high elev:   Gravel       Dry Earth     Grass
+    // low elev:    Dry Earth    Dirt          Mud
+    if (e > 0.1) {
+      if (m > 0.15) return TERRAIN.GRASS;
+      if (m > -0.15) return TERRAIN.DRY_EARTH;
+      return TERRAIN.GRAVEL;
+    } else {
+      if (m > 0.15) return TERRAIN.MUD;
+      if (m > -0.15) return TERRAIN.DIRT;
+      return TERRAIN.DRY_EARTH;
+    }
+  }
+
+  function detail(wx, wy) {
+    return detailNoise(wx * CFG.DETAIL_SCALE, wy * CFG.DETAIL_SCALE);
+  }
+
+  return { sample, detail };
+})();
+
+// ============================================================
+// 4. CHUNK + CHUNK MANAGER
+// ============================================================
+class Chunk {
+  constructor(cx, cy) {
+    this.cx = cx;
+    this.cy = cy;
+    this.worldX = cx * CFG.CHUNK_PX;
+    this.worldY = cy * CFG.CHUNK_PX;
+    this.tiles = new Array(CFG.CHUNK * CFG.CHUNK);
+    this.decorations = [];
+    this.canvas = null;
+    this._generate();
+    this._render();
+  }
+
+  _generate() {
+    const { CHUNK, TILE } = CFG;
+    this.tileColors = new Array(CHUNK * CHUNK);
+    for (let ty = 0; ty < CHUNK; ty++) {
+      for (let tx = 0; tx < CHUNK; tx++) {
+        const wx = this.worldX + tx * TILE + TILE / 2;
+        const wy = this.worldY + ty * TILE + TILE / 2;
+        const terrain = TerrainSampler.sample(wx, wy);
+        const idx = ty * CHUNK + tx;
+        this.tiles[idx] = terrain;
+
+        // per-tile color jitter based on detail noise (±10%)
+        const d = TerrainSampler.detail(wx, wy);
+        const jitter = 1.0 + d * 0.1; // 0.9 – 1.1
+        const rgb = terrain.rgb;
+        const clamp = v => Math.max(0, Math.min(255, Math.round(v)));
+        this.tileColors[idx] = `rgb(${clamp(rgb[0] * jitter)},${clamp(rgb[1] * jitter)},${clamp(rgb[2] * jitter)})`;
+
+        // decorations (small dots/tufts)
+        if (Math.random() < CFG.DECORATION_CHANCE) {
+          this.decorations.push({
+            x: tx * TILE + Math.random() * TILE,
+            y: ty * TILE + Math.random() * TILE,
+            r: 1.5 + Math.random() * 2.5,
+            color: this._decoColor(terrain),
+          });
+        }
+      }
+    }
+  }
+
+  _decoColor(terrain) {
+    // slightly varied decoration color
+    const c = terrain.color;
+    // darken or lighten
+    const r = parseInt(c.slice(1, 3), 16);
+    const g = parseInt(c.slice(3, 5), 16);
+    const b = parseInt(c.slice(5, 7), 16);
+    const f = 0.7 + Math.random() * 0.3;
+    const clamp = v => Math.min(255, Math.max(0, Math.round(v * f)));
+    return `rgb(${clamp(r)},${clamp(g)},${clamp(b)})`;
+  }
+
+  _render() {
+    const size = CFG.CHUNK_PX;
+    this.canvas = document.createElement('canvas');
+    this.canvas.width = size;
+    this.canvas.height = size;
+    const ctx = this.canvas.getContext('2d');
+    const { CHUNK, TILE } = CFG;
+
+    // tiles (with per-tile color jitter)
+    for (let ty = 0; ty < CHUNK; ty++) {
+      for (let tx = 0; tx < CHUNK; tx++) {
+        ctx.fillStyle = this.tileColors[ty * CHUNK + tx];
+        ctx.fillRect(tx * TILE, ty * TILE, TILE, TILE);
+      }
+    }
+
+    // subtle tile borders
+    ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+    ctx.lineWidth = 0.5;
+    for (let ty = 0; ty < CHUNK; ty++) {
+      for (let tx = 0; tx < CHUNK; tx++) {
+        ctx.strokeRect(tx * TILE, ty * TILE, TILE, TILE);
+      }
+    }
+
+    // decorations
+    for (const d of this.decorations) {
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+      ctx.fillStyle = d.color;
+      ctx.fill();
+    }
+  }
+}
+
+class ChunkManager {
+  constructor() {
+    this.active = new Map();  // visible chunks
+    this.hot = new Map();     // nearby cached
+    this.cold = new Map();    // far cached (limited)
+    this.coldMax = 64;
+  }
+
+  _key(cx, cy) { return `${cx},${cy}`; }
+
+  update(camX, camY, viewW, viewH) {
+    const margin = 1; // extra chunks around viewport
+    const left   = Math.floor((camX - viewW / 2) / CFG.CHUNK_PX) - margin;
+    const right  = Math.floor((camX + viewW / 2) / CFG.CHUNK_PX) + margin;
+    const top    = Math.floor((camY - viewH / 2) / CFG.CHUNK_PX) - margin;
+    const bottom = Math.floor((camY + viewH / 2) / CFG.CHUNK_PX) + margin;
+
+    const hotMargin = margin + 1;
+    const hotLeft   = left - hotMargin;
+    const hotRight  = right + hotMargin;
+    const hotTop    = top - hotMargin;
+    const hotBottom = bottom + hotMargin;
+
+    const newActive = new Map();
+    const newHot = new Map();
+
+    // build active set
+    for (let cy = top; cy <= bottom; cy++) {
+      for (let cx = left; cx <= right; cx++) {
+        const key = this._key(cx, cy);
+        const chunk = this.active.get(key) || this.hot.get(key) || this.cold.get(key) || new Chunk(cx, cy);
+        newActive.set(key, chunk);
+        this.cold.delete(key);
+      }
+    }
+
+    // build hot set (neighbors not in active)
+    for (let cy = hotTop; cy <= hotBottom; cy++) {
+      for (let cx = hotLeft; cx <= hotRight; cx++) {
+        const key = this._key(cx, cy);
+        if (newActive.has(key)) continue;
+        const chunk = this.active.get(key) || this.hot.get(key) || this.cold.get(key) || new Chunk(cx, cy);
+        newHot.set(key, chunk);
+        this.cold.delete(key);
+      }
+    }
+
+    // demote old active/hot to cold
+    for (const [key, chunk] of this.active) {
+      if (!newActive.has(key) && !newHot.has(key)) {
+        this.cold.set(key, chunk);
+      }
+    }
+    for (const [key, chunk] of this.hot) {
+      if (!newActive.has(key) && !newHot.has(key)) {
+        this.cold.set(key, chunk);
+      }
+    }
+
+    // trim cold cache
+    if (this.cold.size > this.coldMax) {
+      const keys = [...this.cold.keys()];
+      while (this.cold.size > this.coldMax) {
+        this.cold.delete(keys.shift());
+      }
+    }
+
+    this.active = newActive;
+    this.hot = newHot;
+  }
+
+  getVisible() {
+    return this.active.values();
+  }
+}
+
+// ============================================================
+// 5. INPUT HANDLER
+// ============================================================
+class Input {
+  constructor() {
+    this.keys = new Set();
+    window.addEventListener('keydown', e => {
+      this.keys.add(e.code);
+    });
+    window.addEventListener('keyup', e => {
+      this.keys.delete(e.code);
+    });
+    // clear on blur to avoid stuck keys
+    window.addEventListener('blur', () => this.keys.clear());
+  }
+
+  isDown(code) { return this.keys.has(code); }
+}
+
+// ============================================================
+// 6. CAMERA
+// ============================================================
+class Camera {
+  constructor() {
+    this.x = 0;
+    this.y = 0;
+  }
+
+  follow(targetX, targetY, dt) {
+    const t = 1 - Math.pow(1 - CFG.CAMERA_LERP, dt / (1000 / 60));
+    this.x += (targetX - this.x) * t;
+    this.y += (targetY - this.y) * t;
+  }
+
+  applyTransform(ctx, canvas) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.translate(
+      Math.round(canvas.width / 2 - this.x),
+      Math.round(canvas.height / 2 - this.y)
+    );
+  }
+}
+
+// ============================================================
+// 7. PLAYER
+// ============================================================
+class Player {
+  constructor(carType, color) {
+    const cfg = CAR_TYPES[carType];
+    this.carType = carType;
+    this.color = color;
+    this.x = 0;
+    this.y = 0;
+    this.angle = -Math.PI / 2; // face up
+    this.speed = 0;
+    this.maxSpeed = cfg.speed;
+    this.turnRate = cfg.turn;
+    this.hp = cfg.hp;
+    this.maxHp = cfg.hp;
+    this.fireRate = cfg.fireRate;
+    this.score = 0;
+    this.kills = 0;
+    this.alive = true;
+  }
+
+  update(input, dt) {
+    if (!this.alive) return;
+    const dtSec = dt / 1000;
+
+    // acceleration / braking
+    if (input.isDown('ArrowUp') || input.isDown('KeyW')) {
+      this.speed += 400 * dtSec;
+    } else if (input.isDown('ArrowDown') || input.isDown('KeyS')) {
+      this.speed -= 300 * dtSec;
+    } else {
+      // friction
+      this.speed *= Math.pow(0.3, dtSec);
+      if (Math.abs(this.speed) < 1) this.speed = 0;
+    }
+
+    // terrain speed modifier
+    const terrain = TerrainSampler.sample(this.x, this.y);
+    const effectiveMax = this.maxSpeed * terrain.speed;
+
+    // clamp speed
+    this.speed = Math.max(-effectiveMax * 0.4, Math.min(effectiveMax, this.speed));
+
+    // steering (only when moving)
+    if (Math.abs(this.speed) > 5) {
+      const steerDir = this.speed >= 0 ? 1 : -1;
+      if (input.isDown('ArrowLeft') || input.isDown('KeyA')) {
+        this.angle -= this.turnRate * dtSec * steerDir;
+      }
+      if (input.isDown('ArrowRight') || input.isDown('KeyD')) {
+        this.angle += this.turnRate * dtSec * steerDir;
+      }
+    }
+
+    // move
+    this.x += Math.cos(this.angle) * this.speed * dtSec;
+    this.y += Math.sin(this.angle) * this.speed * dtSec;
+
+    // score from distance
+    this.score += Math.abs(this.speed) * dtSec * 0.1;
+  }
+
+  takeDamage(amount) {
+    this.hp -= amount;
+    if (this.hp <= 0) {
+      this.hp = 0;
+      this.alive = false;
+    }
+  }
+}
+
+// ============================================================
+// 8. CAR DRAW FUNCTIONS
+// ============================================================
+const CarRenderer = {
+  sedan(ctx, color) {
+    // body
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(-18, -10, 36, 20, 4);
+    ctx.fill();
+    // windshield
+    ctx.fillStyle = 'rgba(150,200,255,0.5)';
+    ctx.fillRect(6, -7, 8, 14);
+    // wheels
+    ctx.fillStyle = '#222';
+    ctx.fillRect(-15, -13, 8, 3);
+    ctx.fillRect(-15, 10, 8, 3);
+    ctx.fillRect(8, -13, 8, 3);
+    ctx.fillRect(8, 10, 8, 3);
+    // headlights
+    ctx.fillStyle = '#ff6';
+    ctx.fillRect(17, -7, 2, 4);
+    ctx.fillRect(17, 3, 2, 4);
+  },
+
+  truck(ctx, color) {
+    // cab
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(2, -12, 18, 24, 3);
+    ctx.fill();
+    // bed
+    ctx.fillStyle = shadeColor(color, -30);
+    ctx.beginPath();
+    ctx.roundRect(-20, -11, 22, 22, 2);
+    ctx.fill();
+    // windshield
+    ctx.fillStyle = 'rgba(150,200,255,0.5)';
+    ctx.fillRect(12, -8, 6, 16);
+    // wheels (bigger)
+    ctx.fillStyle = '#222';
+    ctx.fillRect(-17, -15, 9, 4);
+    ctx.fillRect(-17, 11, 9, 4);
+    ctx.fillRect(6, -15, 9, 4);
+    ctx.fillRect(6, 11, 9, 4);
+    // headlights
+    ctx.fillStyle = '#ff6';
+    ctx.fillRect(19, -8, 2, 5);
+    ctx.fillRect(19, 3, 2, 5);
+  },
+
+  buggy(ctx, color) {
+    // frame
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(-14, -8, 28, 16, 6);
+    ctx.fill();
+    // roll cage lines
+    ctx.strokeStyle = shadeColor(color, -40);
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(-10, -6, 20, 12);
+    // wheels (wide, exposed)
+    ctx.fillStyle = '#333';
+    ctx.fillRect(-14, -13, 7, 5);
+    ctx.fillRect(-14, 8, 7, 5);
+    ctx.fillRect(7, -13, 7, 5);
+    ctx.fillRect(7, 8, 7, 5);
+    // headlight bar
+    ctx.fillStyle = '#ff6';
+    ctx.fillRect(13, -5, 2, 10);
+  },
+
+  suv(ctx, color) {
+    // body (bigger box)
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(-18, -12, 36, 24, 5);
+    ctx.fill();
+    // roof rack
+    ctx.strokeStyle = shadeColor(color, -25);
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(-12, -9, 16, 18);
+    // windshield
+    ctx.fillStyle = 'rgba(150,200,255,0.5)';
+    ctx.fillRect(8, -8, 7, 16);
+    // wheels
+    ctx.fillStyle = '#222';
+    ctx.fillRect(-15, -15, 9, 4);
+    ctx.fillRect(-15, 11, 9, 4);
+    ctx.fillRect(8, -15, 9, 4);
+    ctx.fillRect(8, 11, 9, 4);
+    // headlights
+    ctx.fillStyle = '#ff6';
+    ctx.fillRect(17, -8, 2, 5);
+    ctx.fillRect(17, 3, 2, 5);
+  },
+};
+
+function shadeColor(hex, amount) {
+  let r = parseInt(hex.slice(1, 3), 16) + amount;
+  let g = parseInt(hex.slice(3, 5), 16) + amount;
+  let b = parseInt(hex.slice(5, 7), 16) + amount;
+  r = Math.max(0, Math.min(255, r));
+  g = Math.max(0, Math.min(255, g));
+  b = Math.max(0, Math.min(255, b));
+  return `rgb(${r},${g},${b})`;
+}
+
+function drawCar(ctx, carType, color) {
+  const fn = CarRenderer[carType];
+  if (fn) fn(ctx, color);
+}
+
+// ============================================================
+// 9. RENDERER
+// ============================================================
+class Renderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.resize();
+    window.addEventListener('resize', () => this.resize());
+  }
+
+  resize() {
+    this.canvas.width = window.innerWidth;
+    this.canvas.height = window.innerHeight;
+  }
+
+  clear() {
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.fillStyle = '#1a1a2e';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+  }
+
+  drawChunks(camera, chunkManager) {
+    const ctx = this.ctx;
+    for (const chunk of chunkManager.getVisible()) {
+      ctx.drawImage(chunk.canvas, chunk.worldX, chunk.worldY);
+    }
+  }
+
+  drawPlayer(player) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    ctx.rotate(player.angle);
+    drawCar(ctx, player.carType, player.color);
+    ctx.restore();
+  }
+
+  render(camera, chunkManager, player) {
+    this.clear();
+    camera.applyTransform(this.ctx, this.canvas);
+    this.drawChunks(camera, chunkManager);
+    this.drawPlayer(player);
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+}
+
+// ============================================================
+// 10. HUD
+// ============================================================
+class HUD {
+  constructor() {
+    this.el = document.getElementById('hud');
+    this.hpBar = document.getElementById('hp-bar');
+    this.scoreEl = document.getElementById('hud-score');
+    this.killsEl = document.getElementById('hud-kills');
+    this.timeEl = document.getElementById('hud-time');
+  }
+
+  show() { this.el.classList.remove('hidden'); }
+  hide() { this.el.classList.add('hidden'); }
+
+  update(player, elapsedMs) {
+    const pct = Math.max(0, player.hp / player.maxHp * 100);
+    this.hpBar.style.width = pct + '%';
+
+    // color shift from green → yellow → red
+    if (pct > 50) this.hpBar.style.background = '#22c55e';
+    else if (pct > 25) this.hpBar.style.background = '#f59e0b';
+    else this.hpBar.style.background = '#e94560';
+
+    this.scoreEl.textContent = `Score: ${Math.floor(player.score)}`;
+    this.killsEl.textContent = `Kills: ${player.kills}`;
+
+    const secs = Math.floor(elapsedMs / 1000);
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    this.timeEl.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+  }
+}
+
+// ============================================================
+// 11. GAME (state machine + loop)
+// ============================================================
+const Phase = { MENU: 'menu', PLAYING: 'playing', DEAD: 'dead' };
+
+class Game {
+  constructor() {
+    this.phase = Phase.MENU;
+    this.canvas = document.getElementById('game-canvas');
+    this.renderer = new Renderer(this.canvas);
+    this.input = new Input();
+    this.camera = new Camera();
+    this.hud = new HUD();
+    this.chunkManager = null;
+    this.player = null;
+    this.playStartTime = 0;
+    this.elapsedMs = 0;
+    this.accumulator = 0;
+    this.lastTime = 0;
+    this.running = false;
+  }
+
+  showScreen(phase) {
+    document.getElementById('menu-screen').classList.toggle('hidden', phase !== Phase.MENU);
+    document.getElementById('game-over').classList.toggle('hidden', phase !== Phase.DEAD);
+    if (phase === Phase.PLAYING) this.hud.show();
+    else this.hud.hide();
+    this.phase = phase;
+  }
+
+  startPlaying(carType, color) {
+    this.player = new Player(carType, color);
+    this.camera.x = 0;
+    this.camera.y = 0;
+    this.chunkManager = new ChunkManager();
+    this.chunkManager.update(0, 0, this.canvas.width, this.canvas.height);
+    this.playStartTime = performance.now();
+    this.elapsedMs = 0;
+    this.accumulator = 0;
+    this.lastTime = performance.now();
+    this.showScreen(Phase.PLAYING);
+    if (!this.running) {
+      this.running = true;
+      requestAnimationFrame(t => this.loop(t));
+    }
+  }
+
+  die() {
+    this.player.alive = false;
+    const stats = document.getElementById('go-stats');
+    const secs = Math.floor(this.elapsedMs / 1000);
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    stats.innerHTML = [
+      `Score: ${Math.floor(this.player.score)}`,
+      `Kills: ${this.player.kills}`,
+      `Survived: ${m}:${s.toString().padStart(2, '0')}`,
+    ].join('<br>');
+    this.showScreen(Phase.DEAD);
+  }
+
+  loop(now) {
+    if (this.phase !== Phase.PLAYING) {
+      this.running = false;
+      return;
+    }
+
+    let frameDt = now - this.lastTime;
+    this.lastTime = now;
+    if (frameDt > CFG.MAX_FRAME_DT) frameDt = CFG.MAX_FRAME_DT;
+
+    this.accumulator += frameDt;
+    this.elapsedMs += frameDt;
+
+    // fixed timestep updates
+    while (this.accumulator >= CFG.FIXED_DT) {
+      this.fixedUpdate(CFG.FIXED_DT);
+      this.accumulator -= CFG.FIXED_DT;
+    }
+
+    // render
+    this.camera.follow(this.player.x, this.player.y, frameDt);
+    this.chunkManager.update(this.camera.x, this.camera.y, this.canvas.width, this.canvas.height);
+    this.renderer.render(this.camera, this.chunkManager, this.player);
+    this.hud.update(this.player, this.elapsedMs);
+
+    requestAnimationFrame(t => this.loop(t));
+  }
+
+  fixedUpdate(dt) {
+    if (this.phase !== Phase.PLAYING) return;
+    this.player.update(this.input, dt);
+
+    // K key → trigger death (testing)
+    if (this.input.isDown('KeyK')) {
+      this.player.alive = false;
+    }
+
+    if (!this.player.alive) {
+      this.die();
+    }
+  }
+}
+
+// ============================================================
+// 12. MENU WIRING
+// ============================================================
+function setupMenu(game) {
+  let selectedCar = 'sedan';
+  let selectedColor = CAR_COLORS[0].hex;
+
+  const selectorEl = document.getElementById('car-selector');
+  const colorPickerEl = document.getElementById('color-picker');
+
+  // --- Car cards ---
+  for (const [type, cfg] of Object.entries(CAR_TYPES)) {
+    const card = document.createElement('div');
+    card.className = 'car-card' + (type === selectedCar ? ' selected' : '');
+    card.dataset.type = type;
+
+    const preview = document.createElement('canvas');
+    preview.width = 80;
+    preview.height = 80;
+    card.appendChild(preview);
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'car-name';
+    nameEl.textContent = cfg.name;
+    card.appendChild(nameEl);
+
+    const statsEl = document.createElement('div');
+    statsEl.className = 'car-stats';
+    statsEl.textContent = `SPD ${cfg.speed} | TRN ${cfg.turn}\nHP ${cfg.hp}`;
+    card.appendChild(statsEl);
+
+    card.addEventListener('click', () => {
+      selectorEl.querySelectorAll('.car-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      selectedCar = type;
+      renderPreviews();
+    });
+
+    selectorEl.appendChild(card);
+  }
+
+  // --- Color swatches ---
+  for (const c of CAR_COLORS) {
+    const swatch = document.createElement('div');
+    swatch.className = 'color-swatch' + (c.hex === selectedColor ? ' selected' : '');
+    swatch.style.background = c.hex;
+    swatch.title = c.name;
+
+    swatch.addEventListener('click', () => {
+      colorPickerEl.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+      swatch.classList.add('selected');
+      selectedColor = c.hex;
+      renderPreviews();
+    });
+
+    colorPickerEl.appendChild(swatch);
+  }
+
+  function renderPreviews() {
+    const cards = selectorEl.querySelectorAll('.car-card');
+    cards.forEach(card => {
+      const type = card.dataset.type;
+      const cvs = card.querySelector('canvas');
+      const ctx = cvs.getContext('2d');
+      ctx.clearRect(0, 0, 80, 80);
+      ctx.save();
+      ctx.translate(40, 40);
+      // rotate so car faces up in the preview
+      ctx.rotate(-Math.PI / 2);
+      const color = card.classList.contains('selected') ? selectedColor : '#666';
+      drawCar(ctx, type, color);
+      ctx.restore();
+    });
+  }
+
+  renderPreviews();
+
+  // --- Start button ---
+  document.getElementById('start-btn').addEventListener('click', () => {
+    game.startPlaying(selectedCar, selectedColor);
+  });
+
+  // --- Retry button ---
+  document.getElementById('retry-btn').addEventListener('click', () => {
+    game.showScreen(Phase.MENU);
+    renderPreviews();
+  });
+}
+
+// ============================================================
+// 13. BOOT
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+  const game = new Game();
+  setupMenu(game);
+});
+</script>
+</body>
+</html>
