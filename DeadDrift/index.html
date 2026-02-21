@@ -255,6 +255,17 @@ const CFG = {
   MOISTURE_SCALE: 0.0007,  // moisture regions (~30 tiles)
   DETAIL_SCALE: 0.004,     // local sub-features (~5-8 tiles)
   DECORATION_CHANCE: 0.08,
+  ENEMY_POOL_SIZE: 200,
+  BULLET_POOL_SIZE: 100,
+  BULLET_SPEED: 600,
+  BULLET_MAX_AGE: 800,
+  BULLET_DAMAGE: 20,
+  PLAYER_RADIUS: 16,
+  SPAWN_MARGIN: 150,
+  BASE_SPAWN_RATE: 0.5,
+  SPAWN_GROWTH: 0.02,
+  MAX_SPAWN_RATE: 5,
+  HIT_COOLDOWN: 500,
 };
 
 CFG.CHUNK_PX = CFG.CHUNK * CFG.TILE; // 768
@@ -284,6 +295,12 @@ const CAR_COLORS = [
   { name: 'Pearl',    hex: '#e8e8e8' },
   { name: 'Rust',     hex: '#b45309' },
 ];
+
+const ENEMY_TYPES = {
+  shambler: { speed: 60,  hp: 40,  damage: 10, points: 10, radius: 10, color: '#8b0000' },
+  runner:   { speed: 150, hp: 20,  damage: 5,  points: 25, radius: 8,  color: '#cc5500' },
+  brute:    { speed: 40,  hp: 100, damage: 25, points: 50, radius: 16, color: '#4a0040' },
+};
 
 // ============================================================
 // 2. SIMPLEX NOISE (Stefan Gustavson, public domain)
@@ -403,6 +420,224 @@ const TerrainSampler = (() => {
 
   return { sample, detail };
 })();
+
+// ============================================================
+// 3b. ENEMY POOL
+// ============================================================
+class EnemyPool {
+  constructor() {
+    this.pool = Array.from({ length: CFG.ENEMY_POOL_SIZE }, () => ({
+      alive: false, type: '', x: 0, y: 0, angle: 0,
+      hp: 0, maxHp: 0, speed: 0, damage: 0, points: 0,
+      radius: 0, color: '', hitCooldown: 0,
+    }));
+  }
+
+  spawn(type, x, y) {
+    const cfg = ENEMY_TYPES[type];
+    if (!cfg) return null;
+    for (const e of this.pool) {
+      if (!e.alive) {
+        e.alive = true;
+        e.type = type;
+        e.x = x;
+        e.y = y;
+        e.angle = 0;
+        e.hp = cfg.hp;
+        e.maxHp = cfg.hp;
+        e.speed = cfg.speed;
+        e.damage = cfg.damage;
+        e.points = cfg.points;
+        e.radius = cfg.radius;
+        e.color = cfg.color;
+        e.hitCooldown = 0;
+        return e;
+      }
+    }
+    return null;
+  }
+
+  forEach(fn) {
+    for (const e of this.pool) {
+      if (e.alive) fn(e);
+    }
+  }
+
+  reset() {
+    for (const e of this.pool) e.alive = false;
+  }
+}
+
+// ============================================================
+// 3c. BULLET POOL
+// ============================================================
+class BulletPool {
+  constructor() {
+    this.pool = Array.from({ length: CFG.BULLET_POOL_SIZE }, () => ({
+      alive: false, x: 0, y: 0, dx: 0, dy: 0, angle: 0, age: 0,
+      damage: CFG.BULLET_DAMAGE,
+    }));
+  }
+
+  fire(x, y, angle) {
+    for (const b of this.pool) {
+      if (!b.alive) {
+        b.alive = true;
+        b.x = x;
+        b.y = y;
+        b.angle = angle;
+        b.dx = Math.cos(angle) * CFG.BULLET_SPEED;
+        b.dy = Math.sin(angle) * CFG.BULLET_SPEED;
+        b.age = 0;
+        return b;
+      }
+    }
+    return null;
+  }
+
+  update(dt) {
+    const dtSec = dt / 1000;
+    for (const b of this.pool) {
+      if (!b.alive) continue;
+      b.x += b.dx * dtSec;
+      b.y += b.dy * dtSec;
+      b.age += dt;
+      if (b.age > CFG.BULLET_MAX_AGE) b.alive = false;
+    }
+  }
+
+  forEach(fn) {
+    for (const b of this.pool) {
+      if (b.alive) fn(b);
+    }
+  }
+
+  reset() {
+    for (const b of this.pool) b.alive = false;
+  }
+}
+
+// ============================================================
+// 3d. ENEMY MANAGER
+// ============================================================
+class EnemyManager {
+  constructor(enemyPool) {
+    this.pool = enemyPool;
+    this.spawnTimer = 0;
+  }
+
+  update(dt, player, camera, canvas, elapsed) {
+    const dtSec = dt / 1000;
+    const elapsedSec = elapsed / 1000;
+
+    // --- spawning ---
+    const rate = Math.min(CFG.BASE_SPAWN_RATE + elapsedSec * CFG.SPAWN_GROWTH, CFG.MAX_SPAWN_RATE);
+    this.spawnTimer += dtSec;
+    const interval = 1 / rate;
+    while (this.spawnTimer >= interval) {
+      this.spawnTimer -= interval;
+      this._spawnOne(player, camera, canvas, elapsedSec);
+    }
+
+    // --- AI movement + player collision ---
+    this.pool.forEach(e => {
+      // movement toward player
+      const dx = player.x - e.x;
+      const dy = player.y - e.y;
+      let targetAngle = Math.atan2(dy, dx);
+
+      // runner zigzag
+      if (e.type === 'runner') {
+        targetAngle += Math.sin(elapsed * 0.004 + e.x * 0.01) * 0.5;
+      }
+
+      e.angle = targetAngle;
+      e.x += Math.cos(e.angle) * e.speed * dtSec;
+      e.y += Math.sin(e.angle) * e.speed * dtSec;
+
+      // hit cooldown
+      if (e.hitCooldown > 0) e.hitCooldown -= dt;
+
+      // player collision
+      const pdx = player.x - e.x;
+      const pdy = player.y - e.y;
+      const dist = Math.sqrt(pdx * pdx + pdy * pdy);
+      if (dist < e.radius + CFG.PLAYER_RADIUS && e.hitCooldown <= 0) {
+        player.takeDamage(e.damage);
+        e.hitCooldown = CFG.HIT_COOLDOWN;
+      }
+    });
+
+    // --- basic separation ---
+    const enemies = this.pool.pool;
+    for (let i = 0; i < enemies.length; i++) {
+      const a = enemies[i];
+      if (!a.alive) continue;
+      for (let j = i + 1; j < enemies.length; j++) {
+        const b = enemies[j];
+        if (!b.alive) continue;
+        const sx = a.x - b.x;
+        const sy = a.y - b.y;
+        const sd = sx * sx + sy * sy;
+        if (sd < 400 && sd > 0) { // 20px
+          const d = Math.sqrt(sd);
+          const push = (20 - d) * 0.3;
+          const nx = sx / d * push;
+          const ny = sy / d * push;
+          a.x += nx; a.y += ny;
+          b.x -= nx; b.y -= ny;
+        }
+      }
+    }
+  }
+
+  bulletCollision(bulletPool, player) {
+    bulletPool.forEach(b => {
+      this.pool.forEach(e => {
+        const dx = b.x - e.x;
+        const dy = b.y - e.y;
+        const dist = dx * dx + dy * dy;
+        const hitR = e.radius + 4;
+        if (dist < hitR * hitR) {
+          e.hp -= b.damage;
+          b.alive = false;
+          if (e.hp <= 0) {
+            e.alive = false;
+            player.score += e.points;
+            player.kills++;
+          }
+        }
+      });
+    });
+  }
+
+  _spawnOne(player, camera, canvas, elapsedSec) {
+    // pick type based on elapsed time
+    const types = ['shambler'];
+    if (elapsedSec > 15) types.push('runner');
+    if (elapsedSec > 30) types.push('brute');
+    const type = types[Math.floor(Math.random() * types.length)];
+
+    // spawn on random viewport edge + margin
+    const hw = canvas.width / 2 + CFG.SPAWN_MARGIN;
+    const hh = canvas.height / 2 + CFG.SPAWN_MARGIN;
+    let x, y;
+    const edge = Math.floor(Math.random() * 4);
+    switch (edge) {
+      case 0: x = camera.x - hw; y = camera.y + (Math.random() * 2 - 1) * hh; break; // left
+      case 1: x = camera.x + hw; y = camera.y + (Math.random() * 2 - 1) * hh; break; // right
+      case 2: x = camera.x + (Math.random() * 2 - 1) * hw; y = camera.y - hh; break; // top
+      case 3: x = camera.x + (Math.random() * 2 - 1) * hw; y = camera.y + hh; break; // bottom
+    }
+
+    this.pool.spawn(type, x, y);
+  }
+
+  reset() {
+    this.pool.reset();
+    this.spawnTimer = 0;
+  }
+}
 
 // ============================================================
 // 4. CHUNK + CHUNK MANAGER
@@ -637,11 +872,15 @@ class Player {
     this.score = 0;
     this.kills = 0;
     this.alive = true;
+    this.fireCooldown = 0;
+    this.flashTimer = 0;
   }
 
   update(input, dt) {
     if (!this.alive) return;
     const dtSec = dt / 1000;
+    this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+    if (this.flashTimer > 0) this.flashTimer -= dt;
 
     // acceleration / braking
     if (input.isDown('ArrowUp') || input.isDown('KeyW')) {
@@ -682,6 +921,7 @@ class Player {
 
   takeDamage(amount) {
     this.hp -= amount;
+    this.flashTimer = 150;
     if (this.hp <= 0) {
       this.hp = 0;
       this.alive = false;
@@ -836,14 +1076,73 @@ class Renderer {
     ctx.save();
     ctx.translate(player.x, player.y);
     ctx.rotate(player.angle);
-    drawCar(ctx, player.carType, player.color);
+    // flash white on damage
+    if (player.flashTimer > 0) {
+      ctx.globalAlpha = 0.5;
+      drawCar(ctx, player.carType, player.color);
+      ctx.globalAlpha = 0.5;
+      drawCar(ctx, player.carType, '#fff');
+      ctx.globalAlpha = 1;
+    } else {
+      drawCar(ctx, player.carType, player.color);
+    }
     ctx.restore();
   }
 
-  render(camera, chunkManager, player) {
+  drawEnemies(enemyPool) {
+    const ctx = this.ctx;
+    enemyPool.forEach(e => {
+      ctx.save();
+      ctx.translate(e.x, e.y);
+
+      // body
+      ctx.beginPath();
+      ctx.arc(0, 0, e.radius, 0, Math.PI * 2);
+      ctx.fillStyle = e.color;
+      ctx.fill();
+
+      // inner detail
+      ctx.beginPath();
+      ctx.arc(0, 0, e.radius * 0.5, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.fill();
+
+      // HP bar (only when damaged)
+      if (e.hp < e.maxHp) {
+        const bw = e.radius * 2.5;
+        const bh = 3;
+        const by = -e.radius - 6;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(-bw / 2, by, bw, bh);
+        const pct = e.hp / e.maxHp;
+        ctx.fillStyle = pct > 0.5 ? '#22c55e' : pct > 0.25 ? '#f59e0b' : '#e94560';
+        ctx.fillRect(-bw / 2, by, bw * pct, bh);
+      }
+
+      ctx.restore();
+    });
+  }
+
+  drawBullets(bulletPool) {
+    const ctx = this.ctx;
+    bulletPool.forEach(b => {
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(b.angle);
+      ctx.fillStyle = '#ffee44';
+      ctx.fillRect(-2, -4, 4, 8);
+      ctx.fillStyle = 'rgba(255,255,200,0.5)';
+      ctx.fillRect(-1, -2, 2, 4);
+      ctx.restore();
+    });
+  }
+
+  render(camera, chunkManager, player, enemyPool, bulletPool) {
     this.clear();
     camera.applyTransform(this.ctx, this.canvas);
     this.drawChunks(camera, chunkManager);
+    this.drawEnemies(enemyPool);
+    this.drawBullets(bulletPool);
     this.drawPlayer(player);
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
@@ -898,6 +1197,9 @@ class Game {
     this.hud = new HUD();
     this.chunkManager = null;
     this.player = null;
+    this.enemyPool = new EnemyPool();
+    this.bulletPool = new BulletPool();
+    this.enemyManager = new EnemyManager(this.enemyPool);
     this.playStartTime = 0;
     this.elapsedMs = 0;
     this.accumulator = 0;
@@ -919,6 +1221,8 @@ class Game {
     this.camera.y = 0;
     this.chunkManager = new ChunkManager();
     this.chunkManager.update(0, 0, this.canvas.width, this.canvas.height);
+    this.enemyManager.reset();
+    this.bulletPool.reset();
     this.playStartTime = performance.now();
     this.elapsedMs = 0;
     this.accumulator = 0;
@@ -966,7 +1270,7 @@ class Game {
     // render
     this.camera.follow(this.player.x, this.player.y, frameDt);
     this.chunkManager.update(this.camera.x, this.camera.y, this.canvas.width, this.canvas.height);
-    this.renderer.render(this.camera, this.chunkManager, this.player);
+    this.renderer.render(this.camera, this.chunkManager, this.player, this.enemyPool, this.bulletPool);
     this.hud.update(this.player, this.elapsedMs);
 
     requestAnimationFrame(t => this.loop(t));
@@ -975,6 +1279,23 @@ class Game {
   fixedUpdate(dt) {
     if (this.phase !== Phase.PLAYING) return;
     this.player.update(this.input, dt);
+
+    // shooting
+    if (this.input.isDown('Space') && this.player.fireCooldown <= 0 && this.player.alive) {
+      const bx = this.player.x + Math.cos(this.player.angle) * 22;
+      const by = this.player.y + Math.sin(this.player.angle) * 22;
+      this.bulletPool.fire(bx, by, this.player.angle);
+      this.player.fireCooldown = this.player.fireRate;
+    }
+
+    // update bullets
+    this.bulletPool.update(dt);
+
+    // update enemies (spawning, AI, player collision)
+    this.enemyManager.update(dt, this.player, this.camera, this.canvas, this.elapsedMs);
+
+    // bullet-enemy collision
+    this.enemyManager.bulletCollision(this.bulletPool, this.player);
 
     // K key → trigger death (testing)
     if (this.input.isDown('KeyK')) {
