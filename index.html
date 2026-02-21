@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DeadDrift</title>
+<title>Turbo Wreck</title>
 <style>
   :root {
     --bg: #1a1a2e;
@@ -273,7 +273,7 @@
 <canvas id="game-canvas"></canvas>
 
 <div id="menu-screen">
-  <h1>DEAD DRIFT</h1>
+  <h1>TURBO WRECK</h1>
   <p class="subtitle">survive the wasteland</p>
   <div class="car-selector" id="car-selector"></div>
   <div class="color-picker" id="color-picker"></div>
@@ -1374,17 +1374,17 @@ class Game {
       camera: { x: this.camera.x, y: this.camera.y },
       elapsed: this.elapsedMs,
     };
-    localStorage.setItem('deaddrift_save', JSON.stringify(data));
+    localStorage.setItem('turbowreck_save', JSON.stringify(data));
   }
 
   loadFromStorage() {
-    const raw = localStorage.getItem('deaddrift_save');
+    const raw = localStorage.getItem('turbowreck_save');
     if (!raw) return null;
     try { return JSON.parse(raw); } catch { return null; }
   }
 
   clearSave() {
-    localStorage.removeItem('deaddrift_save');
+    localStorage.removeItem('turbowreck_save');
   }
 
   pause() {

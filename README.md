@@ -1,4 +1,4 @@
-# DeadDrift
+# Turbo Wreck
 
 Top-down 2D survival driving game. Single HTML file, no dependencies, no build step.
 
