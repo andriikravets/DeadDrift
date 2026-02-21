@@ -440,6 +440,7 @@ const CFG = {
   DROP_CHANCE: 0.25,
   MAGNET_RADIUS: 150,
   MAGNET_DAMAGE: 40,
+  WORLD_DROP_INTERVAL: 8000,
   PLAYER_RADIUS: 16,
   SPAWN_MARGIN: 150,
   BASE_SPAWN_RATE: 0.5,
@@ -608,8 +609,8 @@ class EnemyPool {
   constructor() {
     this.pool = Array.from({ length: CFG.ENEMY_POOL_SIZE }, () => ({
       alive: false, type: '', x: 0, y: 0, angle: 0,
-      hp: 0, maxHp: 0, speed: 0, damage: 0, points: 0,
-      radius: 0, color: '', hitCooldown: 0,
+      hp: 0, maxHp: 0, speed: 0, baseSpeed: 0, damage: 0, points: 0,
+      radius: 0, color: '', hitCooldown: 0, age: 0,
     }));
   }
 
@@ -626,11 +627,13 @@ class EnemyPool {
         e.hp = cfg.hp;
         e.maxHp = cfg.hp;
         e.speed = cfg.speed;
+        e.baseSpeed = cfg.speed;
         e.damage = cfg.damage;
         e.points = cfg.points;
         e.radius = cfg.radius;
         e.color = cfg.color;
         e.hitCooldown = 0;
+        e.age = 0;
         return e;
       }
     }
@@ -797,6 +800,12 @@ class EnemyManager {
 
     // --- AI movement + player collision ---
     this.pool.forEach(e => {
+      // age enemy → speed scales +50% over 30s, capped at 1.5×
+      e.age += dt;
+      const ageSec = e.age / 1000;
+      const speedMult = 1 + Math.min(ageSec / 30, 1) * 0.5;
+      e.speed = e.baseSpeed * speedMult;
+
       // movement toward player
       const dx = player.x - e.x;
       const dy = player.y - e.y;
@@ -1723,6 +1732,7 @@ class Game {
     this.bulletPool = new BulletPool();
     this.dropPool = new DropPool();
     this.enemyManager = new EnemyManager(this.enemyPool, this.dropPool);
+    this.worldDropTimer = 0;
     this.playStartTime = 0;
     this.elapsedMs = 0;
     this.accumulator = 0;
@@ -1917,6 +1927,17 @@ class Game {
 
     // update drops
     this.dropPool.update(dt);
+
+    // random world perk spawns
+    this.worldDropTimer += dt;
+    if (this.worldDropTimer >= CFG.WORLD_DROP_INTERVAL) {
+      this.worldDropTimer -= CFG.WORLD_DROP_INTERVAL;
+      const hw = this.canvas.width / 2 * 0.8;
+      const hh = this.canvas.height / 2 * 0.8;
+      const sx = this.camera.x + (Math.random() * 2 - 1) * hw;
+      const sy = this.camera.y + (Math.random() * 2 - 1) * hh;
+      this.dropPool.spawn(rollDropType(), sx, sy);
+    }
 
     // drop pickup
     this.dropPool.forEach(d => {
