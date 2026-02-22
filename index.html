@@ -311,6 +311,82 @@
 
   #retry-btn:hover { opacity: 0.85; }
 
+  /* ---- Controls Screen ---- */
+  #controls-screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(26, 26, 46, 0.92);
+    z-index: 10;
+  }
+
+  #controls-screen.hidden { display: none; }
+
+  #controls-screen h2 {
+    font-size: 2.2rem;
+    color: var(--accent);
+    margin-bottom: 1.5rem;
+    animation: neon-pulse 2s ease-in-out infinite;
+  }
+
+  .controls-grid {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 0.6rem 1.5rem;
+    align-items: center;
+    margin-bottom: 1.5rem;
+  }
+
+  .controls-keys {
+    display: flex;
+    gap: 0.35rem;
+    justify-content: flex-end;
+  }
+
+  .key-icon {
+    display: inline-block;
+    background: var(--surface);
+    border: 1.5px solid var(--neon-cyan);
+    color: var(--neon-cyan);
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    min-width: 1.8rem;
+    text-align: center;
+    box-shadow: 0 0 6px rgba(0, 240, 255, 0.25);
+  }
+
+  .controls-action {
+    color: var(--text);
+    font-size: 0.95rem;
+  }
+
+  #drive-btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 12px 48px;
+    font-size: 1.1rem;
+    font-family: inherit;
+    border-radius: 6px;
+    cursor: pointer;
+    letter-spacing: 0.1rem;
+    transition: opacity 0.15s;
+    margin-bottom: 0.75rem;
+  }
+
+  #drive-btn:hover { opacity: 0.85; }
+
+  .controls-hint {
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
+  }
+
   /* ---- Pause Screen ---- */
   #pause-screen {
     position: fixed;
@@ -385,6 +461,26 @@
   <div class="color-picker" id="color-picker"></div>
   <button id="resume-save-btn" class="hidden">RESUME</button>
   <button id="start-btn">START</button>
+</div>
+
+<div id="controls-screen" class="hidden">
+  <h2>CONTROLS</h2>
+  <div class="controls-grid">
+    <div class="controls-keys"><span class="key-icon">W</span><span class="key-icon">&uarr;</span></div>
+    <div class="controls-action">Accelerate</div>
+    <div class="controls-keys"><span class="key-icon">S</span><span class="key-icon">&darr;</span></div>
+    <div class="controls-action">Reverse</div>
+    <div class="controls-keys"><span class="key-icon">A</span><span class="key-icon">&larr;</span></div>
+    <div class="controls-action">Turn Left</div>
+    <div class="controls-keys"><span class="key-icon">D</span><span class="key-icon">&rarr;</span></div>
+    <div class="controls-action">Turn Right</div>
+    <div class="controls-keys"><span class="key-icon">Space</span></div>
+    <div class="controls-action">Shoot</div>
+    <div class="controls-keys"><span class="key-icon">Esc</span></div>
+    <div class="controls-action">Pause</div>
+  </div>
+  <button id="drive-btn">DRIVE!</button>
+  <span class="controls-hint">press any key to start</span>
 </div>
 
 <div id="hud" class="hidden">
@@ -2378,10 +2474,24 @@ function setupMenu(game) {
     if (save) game.startFromSave(save);
   });
 
-  // --- Start button ---
+  // --- Start button → show controls screen ---
+  const controlsScreen = document.getElementById('controls-screen');
+
+  function dismissControls() {
+    if (!controlsScreen.classList.contains('hidden')) {
+      controlsScreen.classList.add('hidden');
+      document.removeEventListener('keydown', dismissControls);
+      game.startPlaying(selectedCar, selectedColor);
+    }
+  }
+
   document.getElementById('start-btn').addEventListener('click', () => {
-    game.startPlaying(selectedCar, selectedColor);
+    document.getElementById('menu-screen').classList.add('hidden');
+    controlsScreen.classList.remove('hidden');
+    document.addEventListener('keydown', dismissControls);
   });
+
+  document.getElementById('drive-btn').addEventListener('click', dismissControls);
 
   // --- Retry button ---
   document.getElementById('retry-btn').addEventListener('click', () => {

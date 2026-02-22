@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Turbo Wreck — Sprite Gallery</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a;
+    color: #eee;
+    font-family: 'Courier New', monospace;
+    padding: 32px;
+  }
+  h2 {
+    color: #00f0ff;
+    font-size: 1rem;
+    letter-spacing: 0.25rem;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    border-bottom: 1px solid rgba(0,240,255,0.25);
+    padding-bottom: 8px;
+  }
+  section {
+    margin-bottom: 40px;
+    background: #0d0d22;
+    border: 1px solid rgba(0,240,255,0.12);
+    border-radius: 8px;
+    padding: 24px;
+    display: inline-block;
+    min-width: 300px;
+  }
+  .row {
+    display: flex;
+    gap: 28px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .sprite-card { text-align: center; }
+  canvas { display: block; margin: 0 auto 8px; }
+  .label {
+    color: #9a9ab8;
+    font-size: 11px;
+    letter-spacing: 0.12rem;
+    text-transform: uppercase;
+  }
+  .sublabel {
+    color: #4a4a6a;
+    font-size: 10px;
+    margin-top: 2px;
+  }
+</style>
+</head>
+<body>
+
+<section id="enemies">
+  <h2>Enemies</h2>
+  <div class="row">
+    <div class="sprite-card">
+      <canvas id="c-shambler" width="180" height="140"></canvas>
+      <div class="label">Shambler</div>
+      <div class="sublabel">40 HP · 10 pts</div>
+    </div>
+    <div class="sprite-card">
+      <canvas id="c-runner" width="160" height="120"></canvas>
+      <div class="label">Runner</div>
+      <div class="sublabel">20 HP · 25 pts</div>
+    </div>
+    <div class="sprite-card">
+      <canvas id="c-brute" width="220" height="170"></canvas>
+      <div class="label">Brute</div>
+      <div class="sublabel">100 HP · 50 pts</div>
+    </div>
+  </div>
+</section>
+
+<br>
+
+<section id="cars">
+  <h2>Player Cars</h2>
+  <div class="row">
+    <div class="sprite-card">
+      <canvas id="c-sedan" width="200" height="140"></canvas>
+      <div class="label">Sedan</div>
+      <div class="sublabel">Spd 200 · HP 100</div>
+    </div>
+    <div class="sprite-card">
+      <canvas id="c-truck" width="220" height="160"></canvas>
+      <div class="label">Truck</div>
+      <div class="sublabel">Spd 150 · HP 180</div>
+    </div>
+    <div class="sprite-card">
+      <canvas id="c-buggy" width="200" height="140"></canvas>
+      <div class="label">Buggy</div>
+      <div class="sublabel">Spd 280 · HP 60</div>
+    </div>
+    <div class="sprite-card">
+      <canvas id="c-suv" width="220" height="160"></canvas>
+      <div class="label">SUV</div>
+      <div class="sublabel">Spd 180 · HP 140</div>
+    </div>
+  </div>
+</section>
+
+<br>
+
+<section id="perks">
+  <h2>Powerups</h2>
+  <div class="row">
+    <div class="sprite-card">
+      <canvas id="c-hp" width="100" height="100"></canvas>
+      <div class="label">HP</div>
+      <div class="sublabel">Instant heal</div>
+    </div>
+    <div class="sprite-card">
+      <canvas id="c-shield" width="100" height="100"></canvas>
+      <div class="label">Shield</div>
+      <div class="sublabel">8s immunity</div>
+    </div>
+    <div class="sprite-card">
+      <canvas id="c-spread" width="100" height="100"></canvas>
+      <div class="label">Spread Shot</div>
+      <div class="sublabel">12s triple fan</div>
+    </div>
+    <div class="sprite-card">
+      <canvas id="c-rapid" width="100" height="100"></canvas>
+      <div class="label">Rapid Fire</div>
+      <div class="sublabel">12s fast rate</div>
+    </div>
+    <div class="sprite-card">
+      <canvas id="c-rocket" width="100" height="100"></canvas>
+      <div class="label">Rockets</div>
+      <div class="sublabel">12s explosive</div>
+    </div>
+    <div class="sprite-card">
+      <canvas id="c-speed" width="100" height="100"></canvas>
+      <div class="label">Speed Boost</div>
+      <div class="sublabel">10s faster</div>
+    </div>
+    <div class="sprite-card">
+      <canvas id="c-score2x" width="100" height="100"></canvas>
+      <div class="label">Score ×2</div>
+      <div class="sublabel">15s double pts</div>
+    </div>
+    <div class="sprite-card">
+      <canvas id="c-magnet" width="100" height="100"></canvas>
+      <div class="label">Magnet</div>
+      <div class="sublabel">Area pulse</div>
+    </div>
+  </div>
+</section>
+
+<script>
+// ---- Helpers (copied from game) ----
+function shadeColor(hex, amount) {
+  let r = parseInt(hex.slice(1,3), 16) + amount;
+  let g = parseInt(hex.slice(3,5), 16) + amount;
+  let b = parseInt(hex.slice(5,7), 16) + amount;
+  r = Math.max(0, Math.min(255, r));
+  g = Math.max(0, Math.min(255, g));
+  b = Math.max(0, Math.min(255, b));
+  return `rgb(${r},${g},${b})`;
+}
+const C_EXHAUST = 'rgba(80,80,80,0.3)';
+
+// ---- Enemy renderers (exact copy from game) ----
+const EnemyRenderer = {
+  shambler(ctx, color) {
+    ctx.fillStyle = '#222';
+    ctx.fillRect(-7,-10,6,3); ctx.fillRect(-8,7,7,4);
+    ctx.fillRect(4,-10,7,3); ctx.fillRect(5,7,6,3);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(-10,-6); ctx.lineTo(9,-7); ctx.lineTo(10,-4);
+    ctx.lineTo(10,5); ctx.lineTo(8,7); ctx.lineTo(-9,6); ctx.lineTo(-10,3);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(150,200,255,0.5)'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(5,-5); ctx.lineTo(7,-2); ctx.lineTo(5,0); ctx.lineTo(7,3); ctx.lineTo(5,5);
+    ctx.stroke();
+    ctx.fillStyle = '#cc6';
+    ctx.fillRect(9,-5,2,3); ctx.fillRect(9,2,2,3);
+    ctx.fillStyle = C_EXHAUST;
+    ctx.beginPath(); ctx.arc(-13,2,3,0,Math.PI*2); ctx.fill();
+  },
+  runner(ctx, color) {
+    ctx.fillStyle = '#222';
+    ctx.beginPath(); ctx.arc(-6,0,3,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(6,0,3,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.roundRect(-7,-3,14,6,2); ctx.fill();
+    ctx.strokeStyle = shadeColor(color,-40); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-5,-2); ctx.lineTo(5,-2); ctx.moveTo(-5,2); ctx.lineTo(5,2); ctx.stroke();
+    ctx.strokeStyle = '#aaa'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(6,-5); ctx.lineTo(8,-3); ctx.lineTo(8,3); ctx.lineTo(6,5); ctx.stroke();
+    ctx.fillStyle = '#ff6'; ctx.fillRect(8,-1,2,2);
+  },
+  brute(ctx, color) {
+    ctx.fillStyle = '#222';
+    ctx.fillRect(-13,-14,10,5); ctx.fillRect(-13,9,10,5);
+    ctx.fillRect(6,-14,10,5); ctx.fillRect(6,9,10,5);
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.roundRect(-16,-10,32,20,3); ctx.fill();
+    ctx.strokeStyle = shadeColor(color,-30); ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-10,-9); ctx.lineTo(-10,9);
+    ctx.moveTo(0,-9); ctx.lineTo(0,9);
+    ctx.moveTo(10,-9); ctx.lineTo(10,9);
+    ctx.stroke();
+    ctx.strokeStyle = '#888'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(16,-9); ctx.lineTo(18,-7); ctx.lineTo(18,7); ctx.lineTo(16,9); ctx.stroke();
+    ctx.fillStyle = 'rgba(150,200,255,0.4)'; ctx.fillRect(11,-6,4,12);
+    ctx.fillStyle = '#ff6'; ctx.fillRect(16,-8,2,4); ctx.fillRect(16,4,2,4);
+  },
+};
+
+// ---- Car renderers (exact copy from game) ----
+const CarRenderer = {
+  sedan(ctx, color) {
+    ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(-18,-10,36,20,4); ctx.fill();
+    ctx.fillStyle = 'rgba(150,200,255,0.5)'; ctx.fillRect(6,-7,8,14);
+    ctx.fillStyle = '#222';
+    ctx.fillRect(-15,-13,8,3); ctx.fillRect(-15,10,8,3); ctx.fillRect(8,-13,8,3); ctx.fillRect(8,10,8,3);
+    ctx.fillStyle = '#ff6'; ctx.fillRect(17,-7,2,4); ctx.fillRect(17,3,2,4);
+  },
+  truck(ctx, color) {
+    ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(2,-12,18,24,3); ctx.fill();
+    ctx.fillStyle = shadeColor(color,-30); ctx.beginPath(); ctx.roundRect(-20,-11,22,22,2); ctx.fill();
+    ctx.fillStyle = 'rgba(150,200,255,0.5)'; ctx.fillRect(12,-8,6,16);
+    ctx.fillStyle = '#222';
+    ctx.fillRect(-17,-15,9,4); ctx.fillRect(-17,11,9,4); ctx.fillRect(6,-15,9,4); ctx.fillRect(6,11,9,4);
+    ctx.fillStyle = '#ff6'; ctx.fillRect(19,-8,2,5); ctx.fillRect(19,3,2,5);
+  },
+  buggy(ctx, color) {
+    ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(-14,-8,28,16,6); ctx.fill();
+    ctx.strokeStyle = shadeColor(color,-40); ctx.lineWidth = 1.5; ctx.strokeRect(-10,-6,20,12);
+    ctx.fillStyle = '#333';
+    ctx.fillRect(-14,-13,7,5); ctx.fillRect(-14,8,7,5); ctx.fillRect(7,-13,7,5); ctx.fillRect(7,8,7,5);
+    ctx.fillStyle = '#ff6'; ctx.fillRect(13,-5,2,10);
+  },
+  suv(ctx, color) {
+    ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(-18,-12,36,24,5); ctx.fill();
+    ctx.strokeStyle = shadeColor(color,-25); ctx.lineWidth = 1.5; ctx.strokeRect(-12,-9,16,18);
+    ctx.fillStyle = 'rgba(150,200,255,0.5)'; ctx.fillRect(8,-8,7,16);
+    ctx.fillStyle = '#222';
+    ctx.fillRect(-15,-15,9,4); ctx.fillRect(-15,11,9,4); ctx.fillRect(8,-15,9,4); ctx.fillRect(8,11,9,4);
+    ctx.fillStyle = '#ff6'; ctx.fillRect(17,-8,2,5); ctx.fillRect(17,3,2,5);
+  },
+};
+
+// ---- Drop icon renderers (exact copy from game) ----
+const DropRenderer = {
+  hp(ctx, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(-1.5,-6,3,12); ctx.fillRect(-6,-1.5,12,3);
+  },
+  shield(ctx, color) {
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-5,-6); ctx.lineTo(-5,1);
+    ctx.quadraticCurveTo(-5,7,0,8); ctx.quadraticCurveTo(5,7,5,1);
+    ctx.lineTo(5,-6); ctx.closePath(); ctx.stroke();
+  },
+  rocket(ctx, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(0,-7); ctx.lineTo(3,-2); ctx.lineTo(3,4);
+    ctx.lineTo(5,7); ctx.lineTo(-5,7); ctx.lineTo(-3,4); ctx.lineTo(-3,-2);
+    ctx.closePath(); ctx.fill();
+  },
+  spread(ctx, color) {
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0,5); ctx.lineTo(0,-5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,5); ctx.lineTo(-5,-4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,5); ctx.lineTo(5,-4); ctx.stroke();
+  },
+  rapid(ctx, color) {
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(-5,-5); ctx.lineTo(0,0); ctx.lineTo(-5,5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-5); ctx.lineTo(5,0); ctx.lineTo(0,5); ctx.stroke();
+  },
+  speed(ctx, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(1,-7); ctx.lineTo(-3,-1); ctx.lineTo(0,-1);
+    ctx.lineTo(-2,7); ctx.lineTo(4,1); ctx.lineTo(1,1);
+    ctx.closePath(); ctx.fill();
+  },
+  score2x(ctx, color) {
+    ctx.fillStyle = color; ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('x2',0,0);
+  },
+  magnet(ctx, color) {
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0,0,3,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0,0,6,0,Math.PI*2); ctx.stroke();
+  },
+};
+
+// ---- Draw helpers ----
+function drawSprite(id, fn, scale = 4) {
+  const canvas = document.getElementById(id);
+  const ctx = canvas.getContext('2d');
+  ctx.save();
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.scale(scale, scale);
+  fn(ctx);
+  ctx.restore();
+}
+
+function drawDrop(id, fn, color) {
+  const canvas = document.getElementById(id);
+  const ctx = canvas.getContext('2d');
+  const scale = 4;
+  ctx.save();
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.scale(scale, scale);
+  // dark circle background (matches in-game style)
+  ctx.beginPath();
+  ctx.arc(0, 0, 10, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 0.75;
+  ctx.stroke();
+  fn(ctx, color);
+  ctx.restore();
+}
+
+// ---- Render everything ----
+drawSprite('c-shambler', ctx => EnemyRenderer.shambler(ctx, '#8b0000'));
+drawSprite('c-runner',   ctx => EnemyRenderer.runner(ctx, '#cc5500'));
+drawSprite('c-brute',    ctx => EnemyRenderer.brute(ctx, '#4a0040'));
+
+drawSprite('c-sedan', ctx => CarRenderer.sedan(ctx, '#3b82f6'));
+drawSprite('c-truck', ctx => CarRenderer.truck(ctx, '#3b82f6'));
+drawSprite('c-buggy', ctx => CarRenderer.buggy(ctx, '#22c55e'));
+drawSprite('c-suv',   ctx => CarRenderer.suv(ctx, '#dc3545'));
+
+const drops = {
+  hp:      '#22c55e',
+  shield:  '#ffffff',
+  spread:  '#ff8c00',
+  rapid:   '#ffe600',
+  rocket:  '#ff3333',
+  speed:   '#00f0ff',
+  score2x: '#ffd700',
+  magnet:  '#c040ff',
+};
+for (const [type, color] of Object.entries(drops)) {
+  drawDrop(`c-${type}`, DropRenderer[type], color);
+}
+</script>
+</body>
+</html>
