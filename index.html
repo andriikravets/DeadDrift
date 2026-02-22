@@ -607,10 +607,10 @@ const TerrainSampler = (() => {
 // ============================================================
 class EnemyPool {
   constructor() {
-    this.pool = Array.from({ length: CFG.ENEMY_POOL_SIZE }, () => ({
-      alive: false, type: '', x: 0, y: 0, angle: 0,
+    this.pool = Array.from({ length: CFG.ENEMY_POOL_SIZE }, (_, i) => ({
+      _idx: i, alive: false, type: '', x: 0, y: 0, angle: 0,
       hp: 0, maxHp: 0, speed: 0, baseSpeed: 0, damage: 0, points: 0,
-      radius: 0, color: '', hitCooldown: 0, age: 0,
+      radius: 0, color: '', hitCooldown: 0, age: 0, drawFn: null,
     }));
   }
 
@@ -634,6 +634,7 @@ class EnemyPool {
         e.color = cfg.color;
         e.hitCooldown = 0;
         e.age = 0;
+        e.drawFn = EnemyRenderer[type];
         return e;
       }
     }
@@ -770,13 +771,64 @@ class DropPool {
 }
 
 // ============================================================
-// 3e. ENEMY MANAGER
+// 3e. SPATIAL GRID (broad-phase collision)
+// ============================================================
+class SpatialGrid {
+  constructor(cellSize) {
+    this.cellSize = cellSize;
+    this.invCell = 1 / cellSize;
+    this.cells = new Map();
+  }
+
+  clear() {
+    this.cells.clear();
+  }
+
+  _key(cx, cy) {
+    return cx + ',' + cy;
+  }
+
+  insert(entity) {
+    const cx = Math.floor(entity.x * this.invCell);
+    const cy = Math.floor(entity.y * this.invCell);
+    const key = this._key(cx, cy);
+    let cell = this.cells.get(key);
+    if (!cell) {
+      cell = [];
+      this.cells.set(key, cell);
+    }
+    cell.push(entity);
+  }
+
+  query(x, y, radius) {
+    const results = [];
+    const minCx = Math.floor((x - radius) * this.invCell);
+    const maxCx = Math.floor((x + radius) * this.invCell);
+    const minCy = Math.floor((y - radius) * this.invCell);
+    const maxCy = Math.floor((y + radius) * this.invCell);
+    for (let cx = minCx; cx <= maxCx; cx++) {
+      for (let cy = minCy; cy <= maxCy; cy++) {
+        const cell = this.cells.get(this._key(cx, cy));
+        if (cell) {
+          for (let i = 0; i < cell.length; i++) {
+            results.push(cell[i]);
+          }
+        }
+      }
+    }
+    return results;
+  }
+}
+
+// ============================================================
+// 3f. ENEMY MANAGER
 // ============================================================
 class EnemyManager {
   constructor(enemyPool, dropPool) {
     this.pool = enemyPool;
     this.dropPool = dropPool;
     this.spawnTimer = 0;
+    this.grid = new SpatialGrid(48);
   }
 
   _trySpawnDrop(x, y) {
@@ -823,11 +875,12 @@ class EnemyManager {
       // hit cooldown
       if (e.hitCooldown > 0) e.hitCooldown -= dt;
 
-      // player collision
+      // player collision (squared distance — no sqrt)
       const pdx = player.x - e.x;
       const pdy = player.y - e.y;
-      const dist = Math.sqrt(pdx * pdx + pdy * pdy);
-      if (dist < e.radius + CFG.PLAYER_RADIUS && e.hitCooldown <= 0) {
+      const distSq = pdx * pdx + pdy * pdy;
+      const hitR = e.radius + CFG.PLAYER_RADIUS;
+      if (distSq < hitR * hitR && e.hitCooldown <= 0) {
         if (player.shieldTimer <= 0) player.takeDamage(e.damage);
         e.hp -= CFG.BULLET_DAMAGE;
         if (e.hp <= 0) {
@@ -841,14 +894,19 @@ class EnemyManager {
       }
     });
 
-    // --- basic separation ---
+    // --- build spatial grid for separation + bullet collision ---
+    this.grid.clear();
+    this.pool.forEach(e => this.grid.insert(e));
+
+    // --- grid-based separation ---
     const enemies = this.pool.pool;
     for (let i = 0; i < enemies.length; i++) {
       const a = enemies[i];
       if (!a.alive) continue;
-      for (let j = i + 1; j < enemies.length; j++) {
-        const b = enemies[j];
-        if (!b.alive) continue;
+      const neighbors = this.grid.query(a.x, a.y, 20);
+      for (let j = 0; j < neighbors.length; j++) {
+        const b = neighbors[j];
+        if (b._idx <= a._idx) continue; // process each pair once
         const sx = a.x - b.x;
         const sy = a.y - b.y;
         const sd = sx * sx + sy * sy;
@@ -866,8 +924,13 @@ class EnemyManager {
 
   bulletCollision(bulletPool, player) {
     const mult = player.scoreMultTimer > 0 ? 2 : 1;
+    const grid = this.grid;
     bulletPool.forEach(b => {
-      this.pool.forEach(e => {
+      // query grid around bullet (max enemy radius 16 + bullet hitR 8)
+      const nearby = grid.query(b.x, b.y, 24);
+      for (let i = 0; i < nearby.length; i++) {
+        const e = nearby[i];
+        if (!e.alive) continue;
         const dx = b.x - e.x;
         const dy = b.y - e.y;
         const dist = dx * dx + dy * dy;
@@ -885,8 +948,10 @@ class EnemyManager {
           if (b.isRocket) {
             const bx = b.x, by = b.y;
             const sr2 = CFG.ROCKET_SPLASH_RADIUS * CFG.ROCKET_SPLASH_RADIUS;
-            this.pool.forEach(other => {
-              if (other === e) return;
+            const splash = grid.query(bx, by, CFG.ROCKET_SPLASH_RADIUS);
+            for (let j = 0; j < splash.length; j++) {
+              const other = splash[j];
+              if (other === e || !other.alive) continue;
               const sdx = bx - other.x, sdy = by - other.y;
               if (sdx * sdx + sdy * sdy < sr2) {
                 other.hp -= CFG.ROCKET_SPLASH_DAMAGE;
@@ -897,10 +962,11 @@ class EnemyManager {
                   this._trySpawnDrop(other.x, other.y);
                 }
               }
-            });
+            }
           }
+          break; // bullet is dead, stop checking
         }
-      });
+      }
     });
   }
 
@@ -1465,7 +1531,7 @@ const EnemyRenderer = {
     ctx.fillRect(9, -5, 2, 3);
     ctx.fillRect(9, 2, 2, 3);
     // exhaust puff
-    ctx.fillStyle = 'rgba(80,80,80,0.3)';
+    ctx.fillStyle = C_EXHAUST;
     ctx.beginPath();
     ctx.arc(-13, 2, 3, 0, Math.PI * 2);
     ctx.fill();
@@ -1551,12 +1617,28 @@ const EnemyRenderer = {
 };
 
 // ============================================================
-// 9. RENDERER
+// 9. DRAW CONSTANTS (hoisted to avoid per-frame string alloc)
+// ============================================================
+const C_SHIELD_STROKE = 'rgba(255,255,255,0.5)';
+const C_SHIELD_FILL = 'rgba(255,255,255,0.08)';
+const C_BULLET = '#ffee44';
+const C_BULLET_GLOW = 'rgba(255,255,200,0.5)';
+const C_ROCKET_GLOW = 'rgba(255,120,30,0.25)';
+const C_ROCKET_BODY = '#ff3333';
+const C_ROCKET_NOSE = '#ff6644';
+const C_ROCKET_FLAME = '#ffaa22';
+const C_ROCKET_FLAME_INNER = 'rgba(255,200,50,0.6)';
+const C_HIGHLIGHT = 'rgba(255,255,255,0.4)';
+const C_EXHAUST = 'rgba(80,80,80,0.3)';
+
+// ============================================================
+// 9b. RENDERER
 // ============================================================
 class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
+    this._rocketBuf = [];  // reused per frame to avoid alloc
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -1587,10 +1669,10 @@ class Renderer {
       ctx.translate(player.x, player.y);
       ctx.beginPath();
       ctx.arc(0, 0, 28, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.strokeStyle = C_SHIELD_STROKE;
       ctx.lineWidth = 2;
       ctx.stroke();
-      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fillStyle = C_SHIELD_FILL;
       ctx.fill();
       ctx.restore();
     }
@@ -1610,19 +1692,19 @@ class Renderer {
     ctx.restore();
   }
 
-  drawEnemies(enemyPool) {
+  drawEnemies(enemyPool, cullL, cullR, cullT, cullB) {
     const ctx = this.ctx;
     enemyPool.forEach(e => {
+      if (e.x < cullL || e.x > cullR || e.y < cullT || e.y > cullB) return;
       ctx.save();
       ctx.translate(e.x, e.y);
 
-      // vehicle sprite
+      // vehicle sprite (cached draw function)
       ctx.save();
       ctx.rotate(e.angle);
       ctx.scale(1.4, 1.4);
-      const drawFn = EnemyRenderer[e.type];
-      if (drawFn) {
-        drawFn(ctx, e.color);
+      if (e.drawFn) {
+        e.drawFn(ctx, e.color);
       } else {
         ctx.beginPath();
         ctx.arc(0, 0, e.radius, 0, Math.PI * 2);
@@ -1647,42 +1729,70 @@ class Renderer {
     });
   }
 
-  drawBullets(bulletPool) {
+  drawBullets(bulletPool, cullL, cullR, cullT, cullB) {
     const ctx = this.ctx;
+    const rockets = this._rocketBuf;
+    rockets.length = 0;
+
+    // Batch normal bullets into a single path (no save/translate/rotate per bullet)
+    ctx.fillStyle = C_BULLET;
+    ctx.beginPath();
     bulletPool.forEach(b => {
+      if (b.x < cullL || b.x > cullR || b.y < cullT || b.y > cullB) return;
+      if (b.isRocket) { rockets.push(b); return; }
+      const cos = Math.cos(b.angle);
+      const sin = Math.sin(b.angle);
+      const x = b.x, y = b.y;
+      // Rotated rect (-2,-4)→(2,4)
+      ctx.moveTo(x - 2*cos + 4*sin, y - 2*sin - 4*cos);
+      ctx.lineTo(x + 2*cos + 4*sin, y + 2*sin - 4*cos);
+      ctx.lineTo(x + 2*cos - 4*sin, y + 2*sin + 4*cos);
+      ctx.lineTo(x - 2*cos - 4*sin, y - 2*sin + 4*cos);
+    });
+    ctx.fill();
+
+    // Glow pass (inner rects)
+    ctx.fillStyle = C_BULLET_GLOW;
+    ctx.beginPath();
+    bulletPool.forEach(b => {
+      if (b.isRocket || b.x < cullL || b.x > cullR || b.y < cullT || b.y > cullB) return;
+      const cos = Math.cos(b.angle);
+      const sin = Math.sin(b.angle);
+      const x = b.x, y = b.y;
+      // Rotated rect (-1,-2)→(1,2)
+      ctx.moveTo(x - cos + 2*sin, y - sin - 2*cos);
+      ctx.lineTo(x + cos + 2*sin, y + sin - 2*cos);
+      ctx.lineTo(x + cos - 2*sin, y + sin + 2*cos);
+      ctx.lineTo(x - cos - 2*sin, y - sin + 2*cos);
+    });
+    ctx.fill();
+
+    // Rockets individually (few at any time)
+    for (let i = 0; i < rockets.length; i++) {
+      const b = rockets[i];
       ctx.save();
       ctx.translate(b.x, b.y);
       ctx.rotate(b.angle);
-      if (b.isRocket) {
-        // exhaust glow
-        ctx.fillStyle = 'rgba(255,120,30,0.25)';
-        ctx.beginPath();
-        ctx.arc(0, 0, 10, 0, Math.PI * 2);
-        ctx.fill();
-        // body
-        ctx.fillStyle = '#ff3333';
-        ctx.fillRect(-5, -8, 10, 16);
-        // nose
-        ctx.fillStyle = '#ff6644';
-        ctx.fillRect(-3, -10, 6, 4);
-        // tail flame
-        ctx.fillStyle = '#ffaa22';
-        ctx.fillRect(-3, 6, 6, 5);
-        ctx.fillStyle = 'rgba(255,200,50,0.6)';
-        ctx.fillRect(-2, 9, 4, 4);
-      } else {
-        ctx.fillStyle = '#ffee44';
-        ctx.fillRect(-2, -4, 4, 8);
-        ctx.fillStyle = 'rgba(255,255,200,0.5)';
-        ctx.fillRect(-1, -2, 2, 4);
-      }
+      ctx.fillStyle = C_ROCKET_GLOW;
+      ctx.beginPath();
+      ctx.arc(0, 0, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = C_ROCKET_BODY;
+      ctx.fillRect(-5, -8, 10, 16);
+      ctx.fillStyle = C_ROCKET_NOSE;
+      ctx.fillRect(-3, -10, 6, 4);
+      ctx.fillStyle = C_ROCKET_FLAME;
+      ctx.fillRect(-3, 6, 6, 5);
+      ctx.fillStyle = C_ROCKET_FLAME_INNER;
+      ctx.fillRect(-2, 9, 4, 4);
       ctx.restore();
-    });
+    }
   }
 
-  drawDrops(dropPool) {
+  drawDrops(dropPool, cullL, cullR, cullT, cullB) {
     const ctx = this.ctx;
     dropPool.forEach(d => {
+      if (d.x < cullL || d.x > cullR || d.y < cullT || d.y > cullB) return;
       const cfg = DROP_TYPES[d.type];
       // blink when about to expire
       if (d.age > CFG.DROP_BLINK_AGE && Math.floor(d.age / 150) % 2 === 0) return;
@@ -1709,7 +1819,7 @@ class Renderer {
       ctx.lineTo(0, 4);
       ctx.lineTo(-3, 0);
       ctx.closePath();
-      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.fillStyle = C_HIGHLIGHT;
       ctx.fill();
       ctx.restore();
     });
@@ -1767,9 +1877,18 @@ class Renderer {
     this.clear();
     camera.applyTransform(this.ctx, this.canvas);
     this.drawChunks(camera, chunkManager);
-    this.drawDrops(dropPool);
-    this.drawEnemies(enemyPool);
-    this.drawBullets(bulletPool);
+
+    // viewport culling bounds (40px margin for sprite overhang)
+    const halfW = this.canvas.width / 2 + 40;
+    const halfH = this.canvas.height / 2 + 40;
+    const cullL = camera.x - halfW;
+    const cullR = camera.x + halfW;
+    const cullT = camera.y - halfH;
+    const cullB = camera.y + halfH;
+
+    this.drawDrops(dropPool, cullL, cullR, cullT, cullB);
+    this.drawEnemies(enemyPool, cullL, cullR, cullT, cullB);
+    this.drawBullets(bulletPool, cullL, cullR, cullT, cullB);
     this.drawPlayer(player);
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (debugGame) this.drawDebug(debugGame);
