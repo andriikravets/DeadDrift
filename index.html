@@ -89,6 +89,19 @@
 
   #menu-screen.hidden { display: none; }
 
+  #github-link {
+    position: absolute;
+    bottom: 20px;
+    right: 24px;
+    z-index: 1;
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 0.75rem;
+    letter-spacing: 0.08rem;
+    transition: color 0.2s;
+  }
+  #github-link:hover { color: var(--neon-cyan); }
+
   #menu-screen h1 {
     font-size: 4rem;
     color: var(--accent);
@@ -461,6 +474,7 @@
   <div class="color-picker" id="color-picker"></div>
   <button id="resume-save-btn" class="hidden">RESUME</button>
   <button id="start-btn">START</button>
+  <a id="github-link" href="https://github.com/andriikravets/TurboWreck" target="_blank" rel="noopener">github</a>
 </div>
 
 <div id="controls-screen" class="hidden">
