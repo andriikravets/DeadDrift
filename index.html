@@ -617,6 +617,70 @@
 
   /* ---- Touch controls screen ---- */
   .controls-touch { display: none; }
+
+  .touch-controls-visual {
+    display: none;
+    flex-direction: row;
+    justify-content: center;
+    gap: 3rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .touch-diagram {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .touch-diagram-circle {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    border: 2px solid var(--neon-cyan);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    box-shadow: 0 0 12px rgba(0, 240, 255, 0.2);
+  }
+
+  .touch-diagram-arrows {
+    display: grid;
+    grid-template-areas:
+      ". up ."
+      "left . right"
+      ". down .";
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: 1fr 1fr 1fr;
+    width: 60px;
+    height: 60px;
+    align-items: center;
+    justify-items: center;
+    color: var(--neon-cyan);
+    font-size: 1.1rem;
+  }
+
+  .touch-diagram-arrows .arr-up { grid-area: up; }
+  .touch-diagram-arrows .arr-down { grid-area: down; }
+  .touch-diagram-arrows .arr-left { grid-area: left; }
+  .touch-diagram-arrows .arr-right { grid-area: right; }
+
+  .touch-diagram-hold {
+    color: var(--neon-cyan);
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    letter-spacing: 0.1rem;
+  }
+
+  .touch-diagram-label {
+    color: var(--neon-cyan);
+    font-family: 'Courier New', monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.15rem;
+    text-transform: uppercase;
+  }
 </style>
 </head>
 <body>
@@ -649,17 +713,24 @@
     <div class="controls-keys"><span class="key-icon">Esc</span></div>
     <div class="controls-action">Pause</div>
   </div>
-  <div class="controls-grid controls-touch">
-    <div class="controls-keys"><span class="key-icon">L stick &uarr;</span></div>
-    <div class="controls-action">Accelerate</div>
-    <div class="controls-keys"><span class="key-icon">L stick &darr;</span></div>
-    <div class="controls-action">Reverse</div>
-    <div class="controls-keys"><span class="key-icon">L stick &larr;&rarr;</span></div>
-    <div class="controls-action">Steer</div>
-    <div class="controls-keys"><span class="key-icon">R stick</span></div>
-    <div class="controls-action">Shoot (hold)</div>
-    <div class="controls-keys"><span class="key-icon">⏸</span></div>
-    <div class="controls-action">Pause</div>
+  <div class="touch-controls-visual controls-touch">
+    <div class="touch-diagram">
+      <div class="touch-diagram-circle">
+        <div class="touch-diagram-arrows">
+          <span class="arr-up">&uarr;</span>
+          <span class="arr-left">&larr;</span>
+          <span class="arr-right">&rarr;</span>
+          <span class="arr-down">&darr;</span>
+        </div>
+      </div>
+      <span class="touch-diagram-label">MOVE</span>
+    </div>
+    <div class="touch-diagram">
+      <div class="touch-diagram-circle">
+        <span class="touch-diagram-hold">HOLD</span>
+      </div>
+      <span class="touch-diagram-label">FIRE</span>
+    </div>
   </div>
   <button id="drive-btn">DRIVE!</button>
   <span class="controls-hint controls-keyboard">press any key to start</span>
@@ -1490,10 +1561,11 @@ class ChunkManager {
 const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
 class TouchJoystick {
-  constructor(zoneEl, baseEl, knobEl) {
+  constructor(zoneEl, baseEl, knobEl, { fixed = false } = {}) {
     this.zone = zoneEl;
     this.base = baseEl;
     this.knob = knobEl;
+    this.fixed = fixed;
     this.active = false;
     this.touchId = null;
     this.originX = 0;
@@ -1514,17 +1586,26 @@ class TouchJoystick {
     const t = e.changedTouches[0];
     this.touchId = t.identifier;
     this.active = true;
-    this.originX = t.clientX;
-    this.originY = t.clientY;
     this.dx = 0;
     this.dy = 0;
-    // Switch from idle position to follow-touch position
-    this.base.classList.remove('joystick-base--idle');
-    this.base.classList.add('joystick-base--active');
-    this.base.style.left = (this.originX - 60) + 'px';
-    this.base.style.top = (this.originY - 60) + 'px';
-    this.base.style.bottom = 'auto';
-    this.base.style.right = 'auto';
+
+    if (this.fixed) {
+      // Fixed joystick: base stays in place, compute origin from its center
+      const rect = this.base.getBoundingClientRect();
+      this.originX = rect.left + rect.width / 2;
+      this.originY = rect.top + rect.height / 2;
+      this.base.classList.add('joystick-base--active');
+    } else {
+      // Floating joystick: move base to touch position
+      this.originX = t.clientX;
+      this.originY = t.clientY;
+      this.base.classList.remove('joystick-base--idle');
+      this.base.classList.add('joystick-base--active');
+      this.base.style.left = (this.originX - 60) + 'px';
+      this.base.style.top = (this.originY - 60) + 'px';
+      this.base.style.bottom = 'auto';
+      this.base.style.right = 'auto';
+    }
     this.knob.style.left = '35px';
     this.knob.style.top = '35px';
   }
@@ -1555,13 +1636,15 @@ class TouchJoystick {
       this.touchId = null;
       this.dx = 0;
       this.dy = 0;
-      // Return to idle position
       this.base.classList.remove('joystick-base--active');
-      this.base.classList.add('joystick-base--idle');
-      this.base.style.left = '';
-      this.base.style.top = '';
-      this.base.style.bottom = '';
-      this.base.style.right = '';
+      if (!this.fixed) {
+        // Floating joystick: return to idle position
+        this.base.classList.add('joystick-base--idle');
+        this.base.style.left = '';
+        this.base.style.top = '';
+        this.base.style.bottom = '';
+        this.base.style.right = '';
+      }
       this.knob.style.left = '35px';
       this.knob.style.top = '35px';
     }
@@ -1586,12 +1669,14 @@ class Input {
       this.touchLeft = new TouchJoystick(
         document.getElementById('joystick-zone-left'),
         document.getElementById('joystick-base-left'),
-        document.getElementById('joystick-knob-left')
+        document.getElementById('joystick-knob-left'),
+        { fixed: true }
       );
       this.touchRight = new TouchJoystick(
         document.getElementById('joystick-zone-right'),
         document.getElementById('joystick-base-right'),
-        document.getElementById('joystick-knob-right')
+        document.getElementById('joystick-knob-right'),
+        { fixed: false }
       );
     }
   }
@@ -2847,7 +2932,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (IS_TOUCH) {
     document.querySelectorAll('.controls-keyboard').forEach(el => el.style.display = 'none');
     document.querySelectorAll('.controls-touch').forEach(el => {
-      if (el.classList.contains('controls-grid')) el.style.display = 'grid';
+      if (el.classList.contains('touch-controls-visual')) el.style.display = 'flex';
       else el.style.display = 'inline';
     });
   }
