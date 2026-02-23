@@ -485,6 +485,83 @@
     box-shadow: 0 0 14px rgba(255, 45, 123, 0.5), 0 0 30px rgba(255, 45, 123, 0.2);
     text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
   }
+
+  /* ---- Touch Controls ---- */
+  .touch-controls { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+  .touch-controls.hidden { display: none; }
+
+  .joystick-zone {
+    position: absolute;
+    bottom: 0;
+    width: 50%;
+    height: 50%;
+    pointer-events: auto;
+    touch-action: none;
+  }
+  .joystick-zone--left { left: 0; }
+  .joystick-zone--right { right: 0; }
+
+  .joystick-base {
+    position: fixed;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    pointer-events: none;
+    display: none;
+  }
+
+  .joystick-knob {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.25);
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    pointer-events: none;
+    left: 35px;
+    top: 35px;
+  }
+
+  #touch-pause-btn {
+    position: fixed;
+    top: 10px;
+    right: 16px;
+    z-index: 6;
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1.5px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    font-size: 1.2rem;
+    cursor: pointer;
+    pointer-events: auto;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .landscape-hint {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.75);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.8rem;
+    padding: 8px 20px;
+    border-radius: 20px;
+    z-index: 20;
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 0.5s;
+  }
+  .landscape-hint.fade-out { opacity: 0; }
+
+  #game-canvas { touch-action: none; }
 </style>
 </head>
 <body>
@@ -530,6 +607,16 @@
   <div class="hud-item" id="hud-time">0:00</div>
   <div id="hud-powerups"></div>
 </div>
+
+<div class="touch-controls hidden" id="touch-controls">
+  <div class="joystick-zone joystick-zone--left" id="joystick-zone-left">
+    <div class="joystick-base" id="joystick-base-left"><div class="joystick-knob" id="joystick-knob-left"></div></div>
+  </div>
+  <div class="joystick-zone joystick-zone--right" id="joystick-zone-right">
+    <div class="joystick-base" id="joystick-base-right"><div class="joystick-knob" id="joystick-knob-right"></div></div>
+  </div>
+</div>
+<button id="touch-pause-btn">⏸</button>
 
 <div id="pause-screen" class="hidden">
   <h2>PAUSED</h2>
@@ -1326,9 +1413,80 @@ class ChunkManager {
 // ============================================================
 // 5. INPUT HANDLER
 // ============================================================
+const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+class TouchJoystick {
+  constructor(zoneEl, baseEl, knobEl) {
+    this.zone = zoneEl;
+    this.base = baseEl;
+    this.knob = knobEl;
+    this.active = false;
+    this.touchId = null;
+    this.originX = 0;
+    this.originY = 0;
+    this.dx = 0;
+    this.dy = 0;
+    this.maxRadius = 50;
+
+    this.zone.addEventListener('touchstart', e => this._onStart(e), { passive: false });
+    this.zone.addEventListener('touchmove', e => this._onMove(e), { passive: false });
+    this.zone.addEventListener('touchend', e => this._onEnd(e), { passive: false });
+    this.zone.addEventListener('touchcancel', e => this._onEnd(e), { passive: false });
+  }
+
+  _onStart(e) {
+    e.preventDefault();
+    if (this.active) return;
+    const t = e.changedTouches[0];
+    this.touchId = t.identifier;
+    this.active = true;
+    this.originX = t.clientX;
+    this.originY = t.clientY;
+    this.dx = 0;
+    this.dy = 0;
+    this.base.style.display = 'block';
+    this.base.style.left = (this.originX - 60) + 'px';
+    this.base.style.top = (this.originY - 60) + 'px';
+    this.knob.style.left = '35px';
+    this.knob.style.top = '35px';
+  }
+
+  _onMove(e) {
+    e.preventDefault();
+    if (!this.active) return;
+    for (const t of e.changedTouches) {
+      if (t.identifier !== this.touchId) continue;
+      let rawDx = t.clientX - this.originX;
+      let rawDy = t.clientY - this.originY;
+      const dist = Math.sqrt(rawDx * rawDx + rawDy * rawDy);
+      if (dist > this.maxRadius) {
+        rawDx = rawDx / dist * this.maxRadius;
+        rawDy = rawDy / dist * this.maxRadius;
+      }
+      this.dx = rawDx / this.maxRadius;
+      this.dy = rawDy / this.maxRadius;
+      this.knob.style.left = (35 + rawDx) + 'px';
+      this.knob.style.top = (35 + rawDy) + 'px';
+    }
+  }
+
+  _onEnd(e) {
+    for (const t of e.changedTouches) {
+      if (t.identifier !== this.touchId) continue;
+      this.active = false;
+      this.touchId = null;
+      this.dx = 0;
+      this.dy = 0;
+      this.base.style.display = 'none';
+    }
+  }
+}
+
 class Input {
   constructor() {
     this.keys = new Set();
+    this.touchLeft = null;
+    this.touchRight = null;
     window.addEventListener('keydown', e => {
       this.keys.add(e.code);
     });
@@ -1337,9 +1495,35 @@ class Input {
     });
     // clear on blur to avoid stuck keys
     window.addEventListener('blur', () => this.keys.clear());
+
+    if (IS_TOUCH) {
+      this.touchLeft = new TouchJoystick(
+        document.getElementById('joystick-zone-left'),
+        document.getElementById('joystick-base-left'),
+        document.getElementById('joystick-knob-left')
+      );
+      this.touchRight = new TouchJoystick(
+        document.getElementById('joystick-zone-right'),
+        document.getElementById('joystick-base-right'),
+        document.getElementById('joystick-knob-right')
+      );
+    }
   }
 
-  isDown(code) { return this.keys.has(code); }
+  isDown(code) {
+    if (this.keys.has(code)) return true;
+    if (!this.touchLeft) return false;
+    const L = this.touchLeft;
+    const R = this.touchRight;
+    switch (code) {
+      case 'ArrowUp': case 'KeyW': return L.active && L.dy < -0.3;
+      case 'ArrowDown': case 'KeyS': return L.active && L.dy > 0.3;
+      case 'ArrowLeft': case 'KeyA': return L.active && L.dx < -0.3;
+      case 'ArrowRight': case 'KeyD': return L.active && L.dx > 0.3;
+      case 'Space': return R.active;
+    }
+    return false;
+  }
 }
 
 // ============================================================
@@ -2206,6 +2390,11 @@ class Game {
     document.getElementById('game-over').classList.toggle('hidden', phase !== Phase.DEAD);
     if (phase === Phase.PLAYING) this.hud.show();
     else this.hud.hide();
+    if (IS_TOUCH) {
+      const playing = phase === Phase.PLAYING;
+      document.getElementById('touch-controls').classList.toggle('hidden', !playing);
+      document.getElementById('touch-pause-btn').style.display = playing ? 'flex' : 'none';
+    }
     this.phase = phase;
   }
 
@@ -2531,6 +2720,14 @@ function setupMenu(game) {
 
   document.getElementById('drive-btn').addEventListener('click', dismissControls);
 
+  // --- Touch: also dismiss controls on tap anywhere (no keyboard on mobile) ---
+  if (IS_TOUCH) {
+    controlsScreen.addEventListener('touchstart', e => {
+      e.preventDefault();
+      dismissControls();
+    });
+  }
+
   // --- Retry button ---
   document.getElementById('retry-btn').addEventListener('click', () => {
     game.showScreen(Phase.MENU);
@@ -2559,6 +2756,39 @@ function setupMenu(game) {
 document.addEventListener('DOMContentLoaded', () => {
   const game = new Game();
   setupMenu(game);
+
+  // --- Touch: pause button ---
+  if (IS_TOUCH) {
+    document.getElementById('touch-pause-btn').addEventListener('click', () => {
+      if (game.phase === Phase.PLAYING) game.pause();
+    });
+  }
+
+  // --- Landscape hint for mobile portrait ---
+  function showLandscapeHint() {
+    if (!IS_TOUCH) return;
+    if (sessionStorage.getItem('tw_landscape_hint')) return;
+    if (window.innerHeight <= window.innerWidth) return;
+    sessionStorage.setItem('tw_landscape_hint', '1');
+    const hint = document.createElement('div');
+    hint.className = 'landscape-hint';
+    hint.textContent = 'Rotate for best experience';
+    document.body.appendChild(hint);
+    setTimeout(() => hint.classList.add('fade-out'), 2500);
+    setTimeout(() => hint.remove(), 3100);
+  }
+
+  // hook into game start
+  const origStart = game.startPlaying.bind(game);
+  game.startPlaying = function(car, color) {
+    origStart(car, color);
+    showLandscapeHint();
+  };
+  const origStartSave = game.startFromSave.bind(game);
+  game.startFromSave = function(save) {
+    origStartSave(save);
+    showLandscapeHint();
+  };
 });
 </script>
 </body>
