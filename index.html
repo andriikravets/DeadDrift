@@ -506,10 +506,17 @@
     width: 120px;
     height: 120px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.08);
-    border: 2px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.06);
+    border: 2px solid rgba(255, 255, 255, 0.12);
     pointer-events: none;
-    display: none;
+  }
+  .joystick-base--idle { display: block; }
+  .joystick-base--left.joystick-base--idle { left: 30px; bottom: 30px; }
+  .joystick-base--right.joystick-base--idle { right: 30px; bottom: 30px; }
+  .joystick-base.joystick-base--active {
+    display: block;
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
   }
 
   .joystick-knob {
@@ -517,11 +524,26 @@
     width: 50px;
     height: 50px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.25);
-    border: 2px solid rgba(255, 255, 255, 0.4);
+    background: rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.3);
     pointer-events: none;
     left: 35px;
     top: 35px;
+  }
+  .joystick-base--active .joystick-knob {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+  }
+
+  .joystick-label {
+    position: absolute;
+    width: 100%;
+    text-align: center;
+    bottom: -20px;
+    font-size: 0.6rem;
+    color: rgba(255, 255, 255, 0.3);
+    letter-spacing: 0.1rem;
+    pointer-events: none;
   }
 
   #touch-pause-btn {
@@ -562,6 +584,39 @@
   .landscape-hint.fade-out { opacity: 0; }
 
   #game-canvas { touch-action: none; }
+
+  /* ---- Mobile menu: landscape + small screens ---- */
+  @media (max-height: 500px) {
+    #menu-screen { padding: 10px; overflow-y: auto; justify-content: flex-start; }
+    #menu-screen h1 { font-size: 2rem; margin-bottom: 0.1rem; letter-spacing: 0.2rem; }
+    #menu-screen .subtitle { font-size: 0.7rem; margin-bottom: 0.5rem; letter-spacing: 0.2rem; }
+    .car-selector { gap: 6px; margin-bottom: 0.5rem; }
+    .car-card { width: 80px; padding: 5px; }
+    .car-card canvas { width: 48px; height: 48px; margin-bottom: 3px; }
+    .car-card .car-name { font-size: 0.65rem; }
+    .car-card .car-stats { font-size: 0.5rem; }
+    .color-picker { gap: 5px; margin-bottom: 0.5rem; }
+    .color-swatch { width: 24px; height: 24px; }
+    #start-btn, #resume-save-btn { padding: 8px 32px; font-size: 0.9rem; }
+    #resume-save-btn { margin-bottom: 0.4rem; }
+    #controls-screen h2 { font-size: 1.4rem; margin-bottom: 0.75rem; }
+    .controls-grid { gap: 0.3rem 1rem; }
+    .key-icon { font-size: 0.7rem; padding: 0.15rem 0.35rem; min-width: 1.4rem; }
+    .controls-action { font-size: 0.8rem; }
+    #drive-btn { padding: 8px 32px; font-size: 0.9rem; }
+  }
+
+  @media (max-width: 480px) {
+    #menu-screen h1 { font-size: 2.5rem; letter-spacing: 0.25rem; }
+    #menu-screen .subtitle { font-size: 0.75rem; letter-spacing: 0.2rem; }
+    .car-card { width: 90px; padding: 6px; }
+    .car-card canvas { width: 56px; height: 56px; }
+    .car-card .car-name { font-size: 0.7rem; }
+    .car-card .car-stats { font-size: 0.55rem; }
+  }
+
+  /* ---- Touch controls screen ---- */
+  .controls-touch { display: none; }
 </style>
 </head>
 <body>
@@ -580,7 +635,7 @@
 
 <div id="controls-screen" class="hidden">
   <h2>CONTROLS</h2>
-  <div class="controls-grid">
+  <div class="controls-grid controls-keyboard">
     <div class="controls-keys"><span class="key-icon">W</span><span class="key-icon">&uarr;</span></div>
     <div class="controls-action">Accelerate</div>
     <div class="controls-keys"><span class="key-icon">S</span><span class="key-icon">&darr;</span></div>
@@ -594,8 +649,21 @@
     <div class="controls-keys"><span class="key-icon">Esc</span></div>
     <div class="controls-action">Pause</div>
   </div>
+  <div class="controls-grid controls-touch">
+    <div class="controls-keys"><span class="key-icon">L stick &uarr;</span></div>
+    <div class="controls-action">Accelerate</div>
+    <div class="controls-keys"><span class="key-icon">L stick &darr;</span></div>
+    <div class="controls-action">Reverse</div>
+    <div class="controls-keys"><span class="key-icon">L stick &larr;&rarr;</span></div>
+    <div class="controls-action">Steer</div>
+    <div class="controls-keys"><span class="key-icon">R stick</span></div>
+    <div class="controls-action">Shoot (hold)</div>
+    <div class="controls-keys"><span class="key-icon">⏸</span></div>
+    <div class="controls-action">Pause</div>
+  </div>
   <button id="drive-btn">DRIVE!</button>
-  <span class="controls-hint">press any key to start</span>
+  <span class="controls-hint controls-keyboard">press any key to start</span>
+  <span class="controls-hint controls-touch">tap anywhere to start</span>
 </div>
 
 <div id="hud" class="hidden">
@@ -610,10 +678,16 @@
 
 <div class="touch-controls hidden" id="touch-controls">
   <div class="joystick-zone joystick-zone--left" id="joystick-zone-left">
-    <div class="joystick-base" id="joystick-base-left"><div class="joystick-knob" id="joystick-knob-left"></div></div>
+    <div class="joystick-base joystick-base--left joystick-base--idle" id="joystick-base-left">
+      <div class="joystick-knob" id="joystick-knob-left"></div>
+      <div class="joystick-label">MOVE</div>
+    </div>
   </div>
   <div class="joystick-zone joystick-zone--right" id="joystick-zone-right">
-    <div class="joystick-base" id="joystick-base-right"><div class="joystick-knob" id="joystick-knob-right"></div></div>
+    <div class="joystick-base joystick-base--right joystick-base--idle" id="joystick-base-right">
+      <div class="joystick-knob" id="joystick-knob-right"></div>
+      <div class="joystick-label">FIRE</div>
+    </div>
   </div>
 </div>
 <button id="touch-pause-btn">⏸</button>
@@ -1444,9 +1518,13 @@ class TouchJoystick {
     this.originY = t.clientY;
     this.dx = 0;
     this.dy = 0;
-    this.base.style.display = 'block';
+    // Switch from idle position to follow-touch position
+    this.base.classList.remove('joystick-base--idle');
+    this.base.classList.add('joystick-base--active');
     this.base.style.left = (this.originX - 60) + 'px';
     this.base.style.top = (this.originY - 60) + 'px';
+    this.base.style.bottom = 'auto';
+    this.base.style.right = 'auto';
     this.knob.style.left = '35px';
     this.knob.style.top = '35px';
   }
@@ -1477,7 +1555,15 @@ class TouchJoystick {
       this.touchId = null;
       this.dx = 0;
       this.dy = 0;
-      this.base.style.display = 'none';
+      // Return to idle position
+      this.base.classList.remove('joystick-base--active');
+      this.base.classList.add('joystick-base--idle');
+      this.base.style.left = '';
+      this.base.style.top = '';
+      this.base.style.bottom = '';
+      this.base.style.right = '';
+      this.knob.style.left = '35px';
+      this.knob.style.top = '35px';
     }
   }
 }
@@ -2756,6 +2842,15 @@ function setupMenu(game) {
 document.addEventListener('DOMContentLoaded', () => {
   const game = new Game();
   setupMenu(game);
+
+  // --- Touch: swap controls screen to show joystick instructions ---
+  if (IS_TOUCH) {
+    document.querySelectorAll('.controls-keyboard').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.controls-touch').forEach(el => {
+      if (el.classList.contains('controls-grid')) el.style.display = 'grid';
+      else el.style.display = 'inline';
+    });
+  }
 
   // --- Touch: pause button ---
   if (IS_TOUCH) {
