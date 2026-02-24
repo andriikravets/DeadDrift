@@ -100,6 +100,32 @@ async function run() {
 
     await gamePage.close();
 
+    // ----------------------------------------------------------------
+    // 4. Mobile screenshots — menu + gameplay at phone viewport
+    // ----------------------------------------------------------------
+    const mobilePage = await browser.newPage();
+    await mobilePage.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    await mobilePage.goto(`file://${path.join(ROOT, 'index.html')}`);
+    await sleep(1200);
+
+    await mobilePage.screenshot({ path: path.join(OUT, 'mobile-menu.png') });
+    console.log('  saved mobile-menu.png');
+
+    // Start game on mobile
+    await mobilePage.click('#start-btn');
+    await sleep(400);
+    await mobilePage.click('#drive-btn');
+    await sleep(200);
+
+    // Simulate touch-drag to move forward
+    await mobilePage.touchscreen.tap(100, 600);
+    await sleep(8000);
+
+    await mobilePage.screenshot({ path: path.join(OUT, 'mobile-gameplay.png') });
+    console.log('  saved mobile-gameplay.png');
+
+    await mobilePage.close();
+
   } finally {
     await browser.close();
   }

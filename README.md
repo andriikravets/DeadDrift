@@ -76,6 +76,15 @@ A controls explanation screen is shown before each new game.
 - HUD with health bar, score, kill counter, and survival timer
 - Debug overlay (backtick key): FPS, chunk counts, pool usage, world position
 
+## Mobile
+
+Fully playable on phones and tablets with dual virtual joysticks — left stick to steer, right stick to aim and shoot.
+
+<p align="center">
+  <img src="assets/screenshots/mobile-menu.png" alt="Mobile Menu" width="280">
+  <img src="assets/screenshots/mobile-gameplay.png" alt="Mobile Gameplay" width="280">
+</p>
+
 ## Tech
 
 - Vanilla ES6+ JavaScript
