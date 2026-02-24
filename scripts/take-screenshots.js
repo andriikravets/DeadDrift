@@ -126,6 +126,30 @@ async function run() {
 
     await mobilePage.close();
 
+    // ----------------------------------------------------------------
+    // 5. Mobile landscape screenshots — menu + gameplay
+    // ----------------------------------------------------------------
+    const landscapePage = await browser.newPage();
+    await landscapePage.setViewport({ width: 844, height: 390, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    await landscapePage.goto(`file://${path.join(ROOT, 'index.html')}`);
+    await sleep(1200);
+
+    await landscapePage.screenshot({ path: path.join(OUT, 'mobile-landscape-menu.png') });
+    console.log('  saved mobile-landscape-menu.png');
+
+    await landscapePage.click('#start-btn');
+    await sleep(400);
+    await landscapePage.click('#drive-btn');
+    await sleep(200);
+
+    await landscapePage.touchscreen.tap(100, 300);
+    await sleep(8000);
+
+    await landscapePage.screenshot({ path: path.join(OUT, 'mobile-landscape-gameplay.png') });
+    console.log('  saved mobile-landscape-gameplay.png');
+
+    await landscapePage.close();
+
   } finally {
     await browser.close();
   }

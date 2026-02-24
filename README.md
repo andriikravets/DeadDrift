@@ -80,9 +80,18 @@ A controls explanation screen is shown before each new game.
 
 Fully playable on phones and tablets with dual virtual joysticks — left stick to steer, right stick to aim and shoot.
 
+**Portrait**
+
 <p align="center">
-  <img src="assets/screenshots/mobile-menu.png" alt="Mobile Menu" width="280">
-  <img src="assets/screenshots/mobile-gameplay.png" alt="Mobile Gameplay" width="280">
+  <img src="assets/screenshots/mobile-menu.png" alt="Mobile Menu (Portrait)" width="280">
+  <img src="assets/screenshots/mobile-gameplay.png" alt="Mobile Gameplay (Portrait)" width="280">
+</p>
+
+**Landscape**
+
+<p align="center">
+  <img src="assets/screenshots/mobile-landscape-menu.png" alt="Mobile Menu (Landscape)" width="420">
+  <img src="assets/screenshots/mobile-landscape-gameplay.png" alt="Mobile Gameplay (Landscape)" width="420">
 </p>
 
 ## Tech
